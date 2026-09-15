@@ -1,0 +1,89 @@
+name: Automatic Claude PR Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+concurrency:
+  group: automatic-prr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+jobs:
+  review:
+    # Never execute fork-controlled code on a persistent self-hosted runner.
+    if: >-
+      ${{
+        github.event.pull_request.draft == false &&
+        github.event.pull_request.head.repo.full_name == github.repository
+      }}
+    runs-on: [self-hosted, __RUNNER_LABEL__]
+    timeout-minutes: 45
+
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      PR_SHA: ${{ github.event.pull_request.head.sha }}
+      PR_BRANCH: ${{ github.event.pull_request.head.ref }}
+      BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      REPOSITORY: ${{ github.repository }}
+      # Claude model name or alias to use for PR review.
+      # Format rules: Use lowercase letters, digits, and hyphens (-) ONLY.
+      #   - Valid aliases: sonnet, opus, haiku
+      #   - Valid full IDs: claude-3-7-sonnet-20250219, claude-3-5-sonnet-20241022
+      #   - Invalid (DO NOT USE): dots (e.g. NOT 'opus-4.8') or underscores (e.g. NOT 'opus_48')
+      MODEL: "sonnet"
+
+    steps:
+      - name: Check out exact PR revision
+        # actions/checkout v7.0.1, pinned to an immutable full commit SHA.
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify revision and attach PR branch
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ((git rev-parse HEAD).Trim() -ne $env:PR_SHA) {
+            throw "HEAD does not match PR_SHA"
+          }
+          git switch -C $env:PR_BRANCH $env:PR_SHA
+          if ($LASTEXITCODE -ne 0) { throw "git switch failed" }
+          if ((git rev-parse HEAD).Trim() -ne $env:PR_SHA) {
+            throw "HEAD does not match PR_SHA after switch"
+          }
+
+      - name: Verify runner prerequisites
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          git --version
+          gh --version
+          gh auth status
+          if ($LASTEXITCODE -ne 0) { throw "gh is not authenticated on this runner user" }
+          claude --version
+          claude auth status
+          if ($LASTEXITCODE -ne 0) { throw "claude is not authenticated on this runner user" }
+
+      - name: Review with Claude Code
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $prompt = Get-Content -Raw -LiteralPath .github/claude/prompts/pr-review.md
+          $prompt = $prompt.Replace('{{PR_NUMBER}}', $env:PR_NUMBER)
+          $prompt = $prompt.Replace('{{PR_SHA}}', $env:PR_SHA)
+          $prompt = $prompt.Replace('{{BASE_SHA}}', $env:BASE_SHA)
+          $prompt = $prompt.Replace('{{REPOSITORY}}', $env:REPOSITORY)
+          & claude -p $prompt `
+            --model $env:MODEL `
+            --permission-mode dontAsk `
+            --setting-sources user `
+            --no-session-persistence
+          if ($LASTEXITCODE -ne 0) { throw "claude review exited $LASTEXITCODE" }
