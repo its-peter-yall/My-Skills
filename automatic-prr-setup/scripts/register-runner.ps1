@@ -1,7 +1,8 @@
 #Requires -Version 5.1
 [CmdletBinding()]
 param(
-    [string] $RunnerLabel = "claude-review",
+    [string] $RunnerLabel = "automatic-prr",
+    [string] $Harness = "claude",
     [string] $RunnerRoot = $(Join-Path $env:USERPROFILE "actions-runners\automatic-prr"),
     [switch] $Replace
 )
@@ -16,6 +17,11 @@ function Fail([int] $Code, [string] $Message) {
 
 if ($RunnerLabel -notmatch '^[A-Za-z0-9_.-]+$') {
     Fail 2 "Invalid runner label: $RunnerLabel"
+}
+
+$Harness = $Harness.Trim().ToLowerInvariant()
+if ($Harness -notin @("claude", "opencode", "cursor", "codex")) {
+    Fail 2 "Invalid review harness: $Harness"
 }
 
 foreach ($name in @("git", "gh")) {
@@ -57,12 +63,59 @@ function Get-MatchingOnlineRunner {
     return $null
 }
 
+function Get-HarnessCommand {
+    switch ($Harness) {
+        "claude" { return Get-Command claude -ErrorAction SilentlyContinue }
+        "opencode" { return Get-Command opencode -ErrorAction SilentlyContinue }
+        "codex" { return Get-Command codex -ErrorAction SilentlyContinue }
+        "cursor" {
+            $cursor = Get-Command cursor-agent -ErrorAction SilentlyContinue
+            if ($cursor) { return $cursor }
+            $candidate = Get-Command agent -ErrorAction SilentlyContinue
+            if ($candidate) {
+                $helpText = (& $candidate.Source --help 2>&1 | Out-String)
+                if ($LASTEXITCODE -eq 0 -and $helpText -match 'Cursor Agent') { return $candidate }
+            }
+            return $null
+        }
+    }
+}
+
+$harnessCommand = Get-HarnessCommand
+if (-not $harnessCommand) {
+    Fail 1 "$Harness CLI is not available on PATH. Run ensure-harness.ps1 first."
+}
+$harnessCommandDirectory = Split-Path -Parent $harnessCommand.Source
+
 $existing = Get-MatchingOnlineRunner
+if (-not $existing -and (Test-Path -LiteralPath (Join-Path $RunnerRoot ".runner") -PathType Leaf)) {
+    try {
+        $configured = Get-Content -Raw -LiteralPath (Join-Path $RunnerRoot ".runner") | ConvertFrom-Json
+        $allRunners = (gh api $runnerApi | ConvertFrom-Json).runners
+        $existing = @($allRunners | Where-Object { $_.name -eq $configured.agentName -and $_.status -eq "online" }) | Select-Object -First 1
+        if ($existing) {
+            $labelNames = @($existing.labels | ForEach-Object { $_.name })
+            if ($labelNames -notcontains $RunnerLabel) {
+                @{ labels = @($RunnerLabel) } | ConvertTo-Json -Compress |
+                    gh api --method POST "repos/$nameWithOwner/actions/runners/$($existing.id)/labels" --input - | Out-Null
+                if ($LASTEXITCODE -ne 0) {
+                    Fail 1 "Could not add runner label $RunnerLabel to $($existing.name)."
+                }
+                $existing = Get-MatchingOnlineRunner
+                Write-Output "Added label $RunnerLabel to configured runner."
+            }
+        }
+    }
+    catch {
+        Fail 1 "Could not inspect or relabel the configured runner: $($_.Exception.Message)"
+    }
+}
 if ($existing) {
     Write-Output "Matching online runner already present: $($existing.name) (id $($existing.id))."
     Write-Output "Skipping registration."
     Write-Output "READY_RUNNER=$($existing.name)"
     Write-Output "READY_STATUS=online"
+    Write-Output "HARNESS_COMMAND=$($harnessCommand.Source)"
     exit 0
 }
 
@@ -129,15 +182,10 @@ if ((Test-Path -LiteralPath $runnerConfig -PathType Leaf) -and -not $Replace) {
 
 $gitCmd = Split-Path -Parent (Get-Command git).Source
 $ghCmd = Split-Path -Parent (Get-Command gh).Source
-$claudeCmd = $null
-$claude = Get-Command claude -ErrorAction SilentlyContinue
-if ($claude) {
-    $claudeCmd = Split-Path -Parent $claude.Source
-}
 $localBin = Join-Path $env:USERPROFILE ".local\bin"
 $pathPrefix = @(
     $localBin,
-    $claudeCmd,
+    $harnessCommandDirectory,
     $ghCmd,
     $gitCmd,
     "C:\Program Files\Git\cmd",
@@ -174,9 +222,10 @@ for ($i = 0; $i -lt 12; $i++) {
 }
 
 if (-not $online) {
-    Fail 1 "Runner did not become online. Keep this Windows user logged in and confirm git, gh, and claude are on PATH."
+    Fail 1 "Runner did not become online. Keep this Windows user logged in and confirm git, gh, and $Harness are on PATH."
 }
 
 Write-Output "Runner online: $($online.name) (id $($online.id))."
 Write-Output "READY_RUNNER=$($online.name)"
 Write-Output "READY_STATUS=online"
+Write-Output "HARNESS_COMMAND=$($harnessCommand.Source)"

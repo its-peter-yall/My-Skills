@@ -1,132 +1,156 @@
 ---
 name: automatic-prr-setup
-description: Set up automatic Claude Code pull-request review on this Windows PC as a self-hosted GitHub Actions runner. Installs workflow files, GitHub CLI if needed, registers a current-user runner, and lands the workflow on the default branch. Use when the user invokes automatic-prr-setup or wants out-of-the-box PR review on this machine.
+description: Set up automatic pull-request review with Claude Code, OpenCode, Cursor, or Codex on this Windows PC as a self-hosted GitHub Actions runner. Installs the selected CLI, workflow files, GitHub CLI if needed, registers a current-user runner, and lands the workflow on the default branch.
 ---
 
 # Automatic PR review setup
 
-Make **this Windows PC** review same-repository pull requests. File install alone is not success.
+Make **this Windows PC** review same-repository pull requests with one user-selected coding harness. File installation alone is not success.
 
-Canonical skill directory: the folder that contains this `SKILL.md`. Resolve it from the loaded skill path. Scripts live in `scripts/` relative to that folder.
+Canonical skill directory: the folder containing this `SKILL.md`. Scripts live in `scripts/` relative to it.
 
 ## READY (all required)
 
 Say READY only when every item is true:
 
-1. `git`, `gh`, and `claude` are on PATH for the current Windows user.
-2. `gh auth status` and `claude auth status` succeed for that user.
-3. `gh api repos/<owner>/<repo>/actions/runners` lists an **online** runner whose labels include both `self-hosted` and the chosen label.
-4. That runner runs as this user (logon scheduled task + `run.cmd`), not `NETWORK SERVICE`.
-5. `.github/workflows/automatic-prr.yml` and `.github/claude/prompts/pr-review.md` exist on the repository **default branch**.
+1. `git`, `gh`, and the selected harness CLI are on PATH for the current Windows user.
+2. `gh auth status` succeeds for that user.
+3. `gh api repos/<owner>/<repo>/actions/runners` lists an **online** runner with both `self-hosted` and the chosen label.
+4. That runner runs as this user through a logon scheduled task and `run.cmd`, not `NETWORK SERVICE`.
+5. `.github/workflows/automatic-prr.yml` and `.github/automatic-prr/pr-review.md` exist on the repository default branch.
 
-If any item fails, say **not READY** and stop. Do not dump a leftover-prerequisites list as if setup succeeded.
+Harness authentication is deliberately not checked and is not part of READY. Always tell the user to authenticate the selected harness before expecting reviews to succeed.
+
+If any required item fails, say **not READY** and stop.
 
 ## Boundaries
 
-- This machine is the runner. Do not switch to GitHub-hosted `ubuntu-latest` or `anthropics/claude-code-action`.
-- Never enable forked pull requests on this persistent runner. Keep the workflow `if` that rejects drafts and `head.repo.full_name != github.repository`.
-- Do not store registration tokens, PATs, or Claude credentials in git.
+- This machine is the runner. Do not switch to GitHub-hosted runners or vendor review actions.
+- Never enable forked pull requests on this persistent runner. Keep the draft and fork rejection guard.
+- Install only the selected harness CLI, never all four.
+- Do not run, check, or automate harness authentication.
+- Do not store registration tokens, PATs, API keys, or harness credentials in git.
 - Do not change branch protection or create GitHub Apps.
-- Do not silent-install or upgrade Claude Code.
-- Do not overwrite managed files that differ unless you showed the diff and the user approved `--force` / `-Force`.
-- Do not delete or `--replace` an existing runner without explicit confirmation.
-- Do not merge unrelated feature branches (including `phase-4-voice-layer`) to land the workflow.
+- Do not overwrite differing managed files without showing the diff and receiving explicit force approval.
+- Delete the legacy `.github/claude/prompts/pr-review.md` only when it exactly matches the managed prompt template.
+- Do not delete or replace an existing runner without explicit confirmation. Add the chosen label to the configured runner when possible.
+- Do not merge unrelated feature branches to land the workflow.
 - Do not put the runner application inside a git working tree.
-- Do not copy this skill tree into the application repository as part of invoke.
-- Do not commit, push, or merge anything except the two managed workflow files on an isolated branch from default (step 9).
+- Do not copy this skill tree into the application repository during setup.
+- Commit, push, and merge only the managed workflow, generic prompt, and an exact-match legacy prompt deletion, using an isolated branch from default.
 
-Human-only gates: `gh auth login` and `claude auth login`. After those succeed, finish the rest.
+The only setup authentication gate is `gh auth login`. Harness login belongs to the user after setup.
 
 ## Procedure
 
-1. Confirm a Git working tree. Report the current branch. Stop on detached HEAD. Inspect `git status --short` and preserve unrelated user changes.
+1. Confirm a Git working tree. Report the current branch. Stop on detached HEAD. Inspect `git status --short` and preserve unrelated changes.
 
-2. Runner label: the single `$ARGUMENTS` value if provided, otherwise `claude-review`. Accept only letters, digits, `_`, `-`, and `.`.
+2. Resolve the runner label from the single `$ARGUMENTS` value, or use `automatic-prr`. Accept only letters, digits, `_`, `-`, and `.`.
 
-3. From the skill directory on Windows run:
+3. On Windows, ensure base tools:
 
    ```powershell
    powershell -NoProfile -File "<skill>/scripts/ensure-tools.ps1"
    ```
 
-   If `claude` is missing, stop with the official Claude Code install URL. Do not winget-install Claude Code. `ensure-tools.ps1` may install GitHub CLI via winget.
+   This requires `git` and installs `gh` with winget when missing. On POSIX, require `git` and `gh`; this skill does not register a POSIX runner.
 
-   On POSIX, require `git`, `gh`, and `claude` already on PATH. This revision does not register a Linux runner.
+4. Run `gh auth status`. If unauthenticated, run `gh auth login` using HTTPS. If it still fails, stop as not READY.
 
-4. Run `gh auth status` and `claude auth status` (read-only first). If `gh` is unauthenticated, run `gh auth login` (HTTPS). If `claude` is unauthenticated, run `claude auth login`. If either still fails: **stop, not READY**.
+5. Ask the user to select exactly one review harness:
 
-5. Inspect these paths in the application repo:
+   - `claude` — Claude Code
+   - `opencode` — OpenCode V2 CLI
+   - `cursor` — Cursor Agent CLI
+   - `codex` — OpenAI Codex CLI
+
+6. Ask for an optional model ID. Trim surrounding whitespace. Blank means the CLI's configured default. Reject CR/LF, control characters, and values longer than 256 characters. Do not offer hard-coded model menus. The installed `/code-review` command must not pin its own model, because command-level model settings can override CLI selection.
+
+7. Install or verify only the selected harness CLI:
+
+   ```powershell
+   powershell -NoProfile -File "<skill>/scripts/ensure-harness.ps1" -Harness "<harness>"
+   ```
+
+   Official installers are used for missing CLIs. Do not run any harness login or status command.
+
+8. Inspect these application-repository paths:
 
    - `.github/workflows/automatic-prr.yml`
-   - `.github/claude/prompts/pr-review.md`
+   - `.github/automatic-prr/pr-review.md`
+   - `.github/claude/prompts/pr-review.md` (legacy migration only)
 
-6. Install files **without** force. `setup.ps1` / `setup.sh` must not require `gh` or `claude`.
+9. Install files without force, passing the exact selected values:
 
    ```powershell
-   powershell -NoProfile -File "<skill>/scripts/setup.ps1" -RunnerLabel "<label>"
+   powershell -NoProfile -File "<skill>/scripts/setup.ps1" -RunnerLabel "<label>" -Harness "<harness>" -Model "<model>"
    ```
 
    ```bash
-   bash "<skill>/scripts/setup.sh" --runner-label "<label>"
+   bash "<skill>/scripts/setup.sh" --runner-label "<label>" --harness "<harness>" --model "<model>"
    ```
 
-7. If the installer exits 3, show a concise diff of both managed files. Ask whether to replace them. Only after explicit yes, rerun with `-Force` / `--force`.
+   Omit the model option when blank if the calling shell cannot preserve an empty argument. These file-only installers must not require `gh` or any harness CLI.
 
-8. `git add -N` the two paths if untracked, then:
+10. If the installer exits 3, show a concise diff of managed files. Ask whether to replace them. Rerun with `-Force` or `--force` only after explicit approval. A modified legacy Claude prompt is preserved without blocking setup.
 
-   ```bash
-   git diff --check -- .github/workflows/automatic-prr.yml .github/claude/prompts/pr-review.md
-   ```
+11. Use intent-to-add for untracked managed files, then run `git diff --check` over the workflow, generic prompt, and legacy prompt when changed.
 
-9. Register or reuse the runner:
+12. Register, relabel, or reuse the runner:
 
    ```powershell
-   powershell -NoProfile -File "<skill>/scripts/register-runner.ps1" -RunnerLabel "<label>"
+   powershell -NoProfile -File "<skill>/scripts/register-runner.ps1" -RunnerLabel "<label>" -Harness "<harness>"
    ```
 
-   Skip registration when an **online** runner already has `self-hosted` and the chosen label. If the runner directory is configured but offline, start it; do not `--replace` without confirmation. After this step the API must show the runner **online** or **stop, not READY**. Registration tokens stay in memory; never write them into the repo or skill folder.
+   Reuse an online matching runner. If the configured online runner lacks the chosen label, add it through GitHub's runner-label API. If configured but offline, start it. Never replace it without confirmation. The API must show it online or setup is not READY.
 
-10. Land the two managed files on the **default branch** without merging feature work:
+13. Land managed changes on the default branch without merging feature work:
 
-    - `git fetch origin`
-    - Default branch: `gh repo view --json defaultBranchRef --jq .defaultBranchRef.name`
-    - `git worktree add -b chore/automatic-prr-setup "%LOCALAPPDATA%\Temp\opencode\automatic-prr-setup-land" "origin/<default>"` (create the parent directory if needed)
-    - In that worktree only, run `setup.ps1`/`setup.sh` with the same label (use `-Force` if the default branch already has different managed files **and** the user approved replacing them)
-    - Commit **only** those two files. Push. `gh pr create` targeting the default branch.
-    - Merge that PR if it contains only those two files and `gh` permits. If merge is denied, leave the PR open and **not READY**.
-    - `git worktree remove` the land worktree. Do not switch the user’s original dirty checkout.
+   - `git fetch origin`.
+   - Read the default branch with `gh repo view --json defaultBranchRef --jq .defaultBranchRef.name`.
+   - Create an isolated worktree under `%LOCALAPPDATA%\Temp\opencode\automatic-prr-setup-land` on `chore/automatic-prr-setup` from `origin/<default>`.
+   - Run the installer there with the same label, harness, and model. Use force only if already approved.
+   - Commit only `.github/workflows/automatic-prr.yml`, `.github/automatic-prr/pr-review.md`, and an exact-match deletion of `.github/claude/prompts/pr-review.md` when present.
+   - Push, create a PR targeting default, verify its file list, and merge if permitted.
+   - If merge is denied, leave the PR open and report not READY.
+   - Remove the temporary worktree without switching the user's original checkout.
 
-11. Report READY with: landing branch, PR URL, runner name, API status `online`, label, and that this Windows user must stay logged in. Recommend a local smoke test only if the user wants to spend a Claude invocation. Use model `sonnet` and the same placeholders as the workflow:
+14. Report READY with landing branch, PR URL, runner name, API status `online`, label, harness, and selected model or `default`. Remind the user that this Windows account must remain logged in and that they must authenticate the harness separately.
 
-    ```powershell
-    $PR_NUMBER = gh pr view --json number --jq .number
-    $PR_SHA = git rev-parse HEAD
-    $BASE_SHA = gh pr view --json baseRefOid --jq .baseRefOid
-    $REPOSITORY = gh repo view --json nameWithOwner --jq .nameWithOwner
-    $MODEL = "sonnet"
-    $prompt = Get-Content -Raw .github/claude/prompts/pr-review.md
-    $prompt = $prompt.Replace('{{PR_NUMBER}}', $PR_NUMBER)
-    $prompt = $prompt.Replace('{{PR_SHA}}', $PR_SHA)
-    $prompt = $prompt.Replace('{{BASE_SHA}}', $BASE_SHA)
-    $prompt = $prompt.Replace('{{REPOSITORY}}', $REPOSITORY)
-    claude -p $prompt --model $MODEL --permission-mode dontAsk --setting-sources user --no-session-persistence
-    ```
+Recommend a local smoke test only when the user wants to spend a harness invocation. Use the same rendered prompt and selected model behavior as the workflow; never silently run it.
 
-The workflow checks out and verifies `github.event.pull_request.head.sha`, rejects drafts and fork PRs, pins `actions/checkout` to SHA `3d3c42e5aac5ba805825da76410c181273ba90b1`, uses `shell: pwsh`, `MODEL: "sonnet"`, avoids persisted checkout credentials, cancels superseded reviews, and invokes Claude with project/local settings excluded.
+## Harness invocation contract
+
+The workflow passes the rendered prompt as one process argument and omits the model flag when model is blank:
+
+```text
+claude -p <prompt> [--model <model>] --permission-mode dontAsk --setting-sources user --no-session-persistence
+opencode run --standalone --auto [--model <provider/model#variant>] <prompt>
+cursor-agent -p --force --trust [--model <model>] <prompt>
+codex exec --ephemeral --sandbox workspace-write -c sandbox_workspace_write.network_access=true [--model <model>] <prompt>
+```
+
+Cursor may use `agent` only after verifying it is Cursor Agent. Never invoke an unrelated executable named `agent`.
+
+The workflow checks the exact PR SHA, rejects drafts and forks, pins `actions/checkout` to `3d3c42e5aac5ba805825da76410c181273ba90b1`, uses `pwsh`, avoids persisted checkout credentials, and cancels superseded reviews.
 
 ## Errors
 
 | Case | Result |
 | --- | --- |
 | Not a git repo or detached HEAD | Stop |
-| Invalid runner label | Stop |
+| Invalid runner label, harness, or model | Stop |
 | `git` missing | Stop |
-| `claude` missing | Stop with install command |
-| `gh` missing | `ensure-tools.ps1` installs via winget; if that fails, stop with https://cli.github.com/ |
-| Auth fails after login | Stop, not READY |
-| Registration token 403 | Stop: repository admin required for self-hosted runners |
-| Managed files differ | Diff + wait; force only after yes |
-| Isolated PR merge denied | PR left open; not READY |
-| Matching runner already online | Skip register; continue landing files |
-| Configured runner offline | Start `run.cmd`; if still offline, not READY |
-| Unrelated dirty files | Leave them; land via worktree |
+| `gh` missing | Install via winget; stop with <https://cli.github.com/> if installation fails |
+| Selected harness missing | Install from the official source; stop if post-install verification fails |
+| GitHub auth fails after login | Stop, not READY |
+| Harness unauthenticated | Do not check; remind the user in the final report |
+| Cursor `agent` is another product | Ignore it; use or install `cursor-agent` |
+| Registration token 403 | Stop: repository admin access is required |
+| Managed files differ | Diff and wait; force only after approval |
+| Modified legacy Claude prompt | Preserve and report it |
+| Isolated PR merge denied | Leave PR open; not READY |
+| Matching runner online | Reuse it |
+| Configured runner lacks label | Add label and reuse it |
+| Configured runner offline | Start it; if still offline, not READY |
+| Unrelated dirty files | Preserve them; land through the isolated worktree |

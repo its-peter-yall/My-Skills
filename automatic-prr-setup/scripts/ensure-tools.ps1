@@ -36,14 +36,6 @@ if (-not (Test-Command "git")) {
     Fail 1 "Missing prerequisite: git is not available on PATH. Install Git for Windows, then rerun."
 }
 
-if (-not (Test-Command "claude")) {
-    Fail 1 @"
-Missing prerequisite: claude is not available on PATH.
-Install Claude Code from https://code.claude.com/docs/en/setup then rerun.
-Do not silent-install Claude Code from this skill.
-"@
-}
-
 if (-not (Test-Command "gh")) {
     $winget = Get-Command winget -ErrorAction SilentlyContinue
     if (-not $winget) {
@@ -68,5 +60,4 @@ if (-not (Test-Command "gh")) {
 
 Write-Output "git: $((Get-Command git).Source)"
 Write-Output "gh: $((Get-Command gh).Source)"
-Write-Output "claude: $((Get-Command claude).Source)"
-Write-Output "Tools OK."
+Write-Output "Base tools OK."

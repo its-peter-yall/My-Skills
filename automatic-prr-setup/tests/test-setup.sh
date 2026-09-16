@@ -3,60 +3,110 @@ set -euo pipefail
 
 skill_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 fixture="$(mktemp -d)"
-repo="$fixture/repo"
 trap 'rm -rf "$fixture"' EXIT
-
-mkdir -p "$repo"
-
-git -C "$repo" init -q
-git -C "$repo" config user.name test
-git -C "$repo" config user.email test@example.com
-git -C "$repo" switch -q -c feature/setup
-
-# File install must succeed without gh or claude on PATH.
-empty_bin="$fixture/empty-bin"
-mkdir -p "$empty_bin"
 git_dir="$(cd "$(dirname "$(command -v git)")" && pwd)"
-core_dir="$(cd "$(dirname "$(command -v sed)")" && pwd)"
-restricted_path="$empty_bin:$git_dir:$core_dir:/usr/bin:/bin"
+restricted_path="$git_dir:/usr/bin:/bin"
 
-(cd "$repo" && PATH="$restricted_path" CLAUDE_SKILL_DIR="$skill_root" \
-  bash "$skill_root/scripts/setup.sh" --runner-label review-box)
+new_repo() {
+  local name="$1"
+  local repo="$fixture/$name"
+  mkdir -p "$repo"
+  git -C "$repo" init -q
+  git -C "$repo" config user.name test
+  git -C "$repo" config user.email test@example.com
+  git -C "$repo" switch -q -c feature/setup
+  printf '%s' "$repo"
+}
 
-workflow="$repo/.github/workflows/automatic-prr.yml"
-prompt="$repo/.github/claude/prompts/pr-review.md"
+run_setup() {
+  local repo="$1"
+  local harness="$2"
+  local model="$3"
+  shift 3
+  (cd "$repo" && PATH="$restricted_path" AUTOMATIC_PRR_SKILL_DIR="$skill_root" \
+    bash "$skill_root/scripts/setup.sh" \
+      --runner-label review-box --harness "$harness" --model "$model" "$@")
+}
 
-test -f "$workflow"
-test -f "$prompt"
-grep -Fq 'runs-on: [self-hosted, review-box]' "$workflow"
-grep -Fq 'github.event.pull_request.head.sha' "$workflow"
-grep -Fq 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1' "$workflow"
-grep -Fq 'MODEL: "sonnet"' "$workflow"
-grep -Fq 'shell: pwsh' "$workflow"
-grep -Fq -e '--model $env:MODEL' "$workflow"
-grep -Fq '/code-review --comment' "$prompt"
+for harness in claude opencode cursor codex; do
+  repo="$(new_repo "repo-$harness")"
+  if [[ "$harness" == opencode ]]; then
+    model='openai/gpt-5.2#high'
+  else
+    model='model-1.2:test[effort=high,fast=false]'
+  fi
 
-if grep -Fq 'gh is not available on PATH' "$workflow"; then
-  printf '%s\n' 'Workflow template should not mention local installer gh checks.' >&2
-  exit 1
-fi
+  run_setup "$repo" "$harness" "$model"
+  workflow="$repo/.github/workflows/automatic-prr.yml"
+  prompt="$repo/.github/automatic-prr/pr-review.md"
+  test -f "$workflow"
+  test -f "$prompt"
+  grep -Fq 'name: Automatic PR Review' "$workflow"
+  grep -Fq 'runs-on: [self-hosted, review-box]' "$workflow"
+  grep -Fq 'github.event.pull_request.head.sha' "$workflow"
+  grep -Fq 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1' "$workflow"
+  grep -Fq 'persist-credentials: false' "$workflow"
+  grep -Fq "REVIEW_HARNESS: \"$harness\"" "$workflow"
+  grep -Fq "REVIEW_MODEL: \"$model\"" "$workflow"
+  grep -Fq '.github/automatic-prr/pr-review.md' "$workflow"
+  grep -Fq '/code-review --comment' "$prompt"
+done
 
-(cd "$repo" && PATH="$restricted_path" CLAUDE_SKILL_DIR="$skill_root" \
-  bash "$skill_root/scripts/setup.sh" --runner-label review-box)
+blank_repo="$(new_repo repo-default-model)"
+run_setup "$blank_repo" codex ''
+grep -Fq 'REVIEW_MODEL: ""' "$blank_repo/.github/workflows/automatic-prr.yml"
+grep -Fq '$hasModel = -not [string]::IsNullOrWhiteSpace($env:REVIEW_MODEL)' "$blank_repo/.github/workflows/automatic-prr.yml"
 
+escaped_repo="$(new_repo repo-escaped-model)"
+escaped_model='provider/model\path&x|y'
+run_setup "$escaped_repo" cursor "$escaped_model"
+grep -Fq 'REVIEW_MODEL: "provider/model\\path&x|y"' "$escaped_repo/.github/workflows/automatic-prr.yml"
+
+legacy_repo="$(new_repo repo-legacy)"
+legacy_prompt="$legacy_repo/.github/claude/prompts/pr-review.md"
+mkdir -p "$(dirname "$legacy_prompt")"
+cp "$skill_root/templates/prompts/pr-review.md" "$legacy_prompt"
+run_setup "$legacy_repo" claude ''
+test ! -e "$legacy_prompt"
+
+modified_repo="$(new_repo repo-modified-legacy)"
+modified_prompt="$modified_repo/.github/claude/prompts/pr-review.md"
+mkdir -p "$(dirname "$modified_prompt")"
+printf '%s\n' 'custom legacy prompt' > "$modified_prompt"
+run_setup "$modified_repo" cursor ''
+test -f "$modified_prompt"
+
+conflict_repo="$(new_repo repo-conflict)"
+run_setup "$conflict_repo" opencode 'openai/gpt-5.2#high'
+workflow="$conflict_repo/.github/workflows/automatic-prr.yml"
 printf '%s\n' '# local edit' >> "$workflow"
-if (cd "$repo" && PATH="$restricted_path" CLAUDE_SKILL_DIR="$skill_root" \
-  bash "$skill_root/scripts/setup.sh" --runner-label review-box); then
+if run_setup "$conflict_repo" opencode 'openai/gpt-5.2#high'; then
   printf '%s\n' 'Expected conflict protection to fail.' >&2
   exit 1
+else
+  code=$?
+  test "$code" -eq 3
 fi
-
-(cd "$repo" && PATH="$restricted_path" CLAUDE_SKILL_DIR="$skill_root" \
-  bash "$skill_root/scripts/setup.sh" --runner-label review-box --force)
-
+run_setup "$conflict_repo" opencode 'openai/gpt-5.2#high' --force
 if grep -Fq '# local edit' "$workflow"; then
   printf '%s\n' 'Force install did not replace the conflicting file.' >&2
   exit 1
+fi
+
+invalid_repo="$(new_repo repo-invalid)"
+if run_setup "$invalid_repo" unknown ''; then
+  printf '%s\n' 'Expected unknown harness to fail.' >&2
+  exit 1
+else
+  code=$?
+  test "$code" -eq 2
+fi
+if run_setup "$invalid_repo" claude $'bad\nmodel'; then
+  printf '%s\n' 'Expected multiline model to fail.' >&2
+  exit 1
+else
+  code=$?
+  test "$code" -eq 2
 fi
 
 printf '%s\n' 'setup tests passed'

@@ -1,4 +1,4 @@
-name: Automatic Claude PR Review
+name: Automatic PR Review
 
 on:
   pull_request:
@@ -31,12 +31,8 @@ jobs:
       PR_BRANCH: ${{ github.event.pull_request.head.ref }}
       BASE_SHA: ${{ github.event.pull_request.base.sha }}
       REPOSITORY: ${{ github.repository }}
-      # Claude model name or alias to use for PR review.
-      # Format rules: Use lowercase letters, digits, and hyphens (-) ONLY.
-      #   - Valid aliases: sonnet, opus, haiku
-      #   - Valid full IDs: claude-3-7-sonnet-20250219, claude-3-5-sonnet-20241022
-      #   - Invalid (DO NOT USE): dots (e.g. NOT 'opus-4.8') or underscores (e.g. NOT 'opus_48')
-      MODEL: "sonnet"
+      REVIEW_HARNESS: "__REVIEW_HARNESS__"
+      REVIEW_MODEL: "__REVIEW_MODEL__"
 
     steps:
       - name: Check out exact PR revision
@@ -65,25 +61,99 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           git --version
+          if ($LASTEXITCODE -ne 0) { throw "git is unavailable" }
           gh --version
+          if ($LASTEXITCODE -ne 0) { throw "gh is unavailable" }
           gh auth status
-          if ($LASTEXITCODE -ne 0) { throw "gh is not authenticated on this runner user" }
-          claude --version
-          claude auth status
-          if ($LASTEXITCODE -ne 0) { throw "claude is not authenticated on this runner user" }
+          if ($LASTEXITCODE -ne 0) { throw "gh is not authenticated for this job" }
 
-      - name: Review with Claude Code
+          switch ($env:REVIEW_HARNESS) {
+            'claude' {
+              claude --version
+            }
+            'opencode' {
+              opencode --version
+            }
+            'cursor' {
+              $cursorCommand = Get-Command cursor-agent -ErrorAction SilentlyContinue
+              if (-not $cursorCommand) {
+                $candidate = Get-Command agent -ErrorAction SilentlyContinue
+                if ($candidate) {
+                  $helpText = (& $candidate.Source --help 2>&1 | Out-String)
+                  if ($helpText -match 'Cursor Agent') { $cursorCommand = $candidate }
+                }
+              }
+              if (-not $cursorCommand) { throw "Cursor Agent CLI is unavailable" }
+              & $cursorCommand.Source --version
+            }
+            'codex' {
+              codex --version
+            }
+            default {
+              throw "Unsupported review harness: $env:REVIEW_HARNESS"
+            }
+          }
+          if ($LASTEXITCODE -ne 0) {
+            throw "$env:REVIEW_HARNESS prerequisite check exited $LASTEXITCODE"
+          }
+
+      - name: Run automatic PR review
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $prompt = Get-Content -Raw -LiteralPath .github/claude/prompts/pr-review.md
+          $prompt = Get-Content -Raw -LiteralPath .github/automatic-prr/pr-review.md
           $prompt = $prompt.Replace('{{PR_NUMBER}}', $env:PR_NUMBER)
           $prompt = $prompt.Replace('{{PR_SHA}}', $env:PR_SHA)
           $prompt = $prompt.Replace('{{BASE_SHA}}', $env:BASE_SHA)
           $prompt = $prompt.Replace('{{REPOSITORY}}', $env:REPOSITORY)
-          & claude -p $prompt `
-            --model $env:MODEL `
-            --permission-mode dontAsk `
-            --setting-sources user `
-            --no-session-persistence
-          if ($LASTEXITCODE -ne 0) { throw "claude review exited $LASTEXITCODE" }
+          $hasModel = -not [string]::IsNullOrWhiteSpace($env:REVIEW_MODEL)
+
+          switch ($env:REVIEW_HARNESS) {
+            'claude' {
+              $arguments = @(
+                '-p', $prompt,
+                '--permission-mode', 'dontAsk',
+                '--setting-sources', 'user',
+                '--no-session-persistence'
+              )
+              if ($hasModel) { $arguments += @('--model', $env:REVIEW_MODEL) }
+              & claude @arguments
+            }
+            'opencode' {
+              $arguments = @('run', '--standalone', '--auto')
+              if ($hasModel) { $arguments += @('--model', $env:REVIEW_MODEL) }
+              $arguments += $prompt
+              & opencode @arguments
+            }
+            'cursor' {
+              $cursorCommand = Get-Command cursor-agent -ErrorAction SilentlyContinue
+              if (-not $cursorCommand) {
+                $candidate = Get-Command agent -ErrorAction SilentlyContinue
+                if ($candidate) {
+                  $helpText = (& $candidate.Source --help 2>&1 | Out-String)
+                  if ($helpText -match 'Cursor Agent') { $cursorCommand = $candidate }
+                }
+              }
+              if (-not $cursorCommand) { throw "Cursor Agent CLI is unavailable" }
+              $arguments = @('-p', '--force', '--trust')
+              if ($hasModel) { $arguments += @('--model', $env:REVIEW_MODEL) }
+              $arguments += $prompt
+              & $cursorCommand.Source @arguments
+            }
+            'codex' {
+              $arguments = @(
+                'exec', '--ephemeral',
+                '--sandbox', 'workspace-write',
+                '-c', 'sandbox_workspace_write.network_access=true'
+              )
+              if ($hasModel) { $arguments += @('--model', $env:REVIEW_MODEL) }
+              $arguments += $prompt
+              & codex @arguments
+            }
+            default {
+              throw "Unsupported review harness: $env:REVIEW_HARNESS"
+            }
+          }
+          if ($LASTEXITCODE -ne 0) {
+            throw "$env:REVIEW_HARNESS review exited $LASTEXITCODE"
+          }
