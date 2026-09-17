@@ -49,7 +49,11 @@ for harness in claude opencode cursor codex; do
   grep -Fq "REVIEW_HARNESS: \"$harness\"" "$workflow"
   grep -Fq "REVIEW_MODEL: \"$model\"" "$workflow"
   grep -Fq '.github/automatic-prr/pr-review.md' "$workflow"
-  grep -Fq '/code-review --comment' "$prompt"
+  grep -Fq 'pr-code-review' "$prompt"
+  grep -Fq 'reviews/<PR_Name>/' "$prompt"
+  grep -Fq 'post the final findings to the pull request' "$prompt"
+  ! grep -Fq '/code-review --comment' "$prompt"
+  ! grep -Fq 'Do not edit files' "$prompt"
 done
 
 blank_repo="$(new_repo repo-default-model)"

@@ -53,9 +53,10 @@ One repository setup runs one selected reviewer, not all four.
    - OpenCode: official `@opencode/cli` npm package
    - Cursor: Cursor native Windows installer
    - Codex: OpenAI standalone Windows installer
-7. Writes the generic workflow and prompt without committing unrelated files.
-8. Registers or reuses a current-user self-hosted runner outside the repository.
-9. Lands only the managed files through an isolated PR from the default branch.
+7. **Skill Initialization:** downloads a snapshot of `master` from [My-Skills / Code-Review Skills](https://github.com/its-peter-yall/My-Skills/tree/master/Code-Review%20Skills) and installs the complete, unchanged `pr-code-review/` and `code-review/` folders into the repository. Claude uses `.claude/skills/`; OpenCode, Cursor, and Codex use `.agents/skills/`. Antigravity can use the shared layout but is not a selectable setup harness.
+8. Writes the generic workflow and prompt without committing unrelated files.
+9. Registers or reuses a current-user self-hosted runner outside the repository.
+10. Lands only the managed files, including source-backed skill files, through an isolated PR from the default branch using the same source snapshot.
 
 Setup does **not** authenticate or check authentication for the selected harness. Authenticate it yourself before expecting PR reviews to succeed. READY does not include harness login.
 
@@ -63,6 +64,25 @@ Setup does **not** authenticate or check authentication for the selected harness
 
 - `.github/workflows/automatic-prr.yml`
 - `.github/automatic-prr/pr-review.md`
+- `.claude/skills/pr-code-review/` and `.claude/skills/code-review/` for Claude, or `.agents/skills/pr-code-review/` and `.agents/skills/code-review/` for the other supported harnesses (only files present in the source snapshot)
+
+### Skill Initialization
+
+From the target repository, download once to a new directory outside the repository and retain it for the landing PR:
+
+```powershell
+powershell -NoProfile -File "<skill>/scripts/initialize-skills.ps1" -Harness opencode -SnapshotDirectory "<new-external-snapshot-path>"
+```
+
+Reuse that snapshot in the isolated landing worktree without another download:
+
+```powershell
+powershell -NoProfile -File "<skill>/scripts/initialize-skills.ps1" -Harness opencode -SourceDirectory "<existing-snapshot-path>"
+```
+
+The initializer prints `SOURCE_DIRECTORY`, `SOURCE_SHA`, and individual `MANAGED_PATH` entries. It validates both skill trees before copying, preserves nested assets and file bytes, and preserves extra destination files and other skills. Differing files produce a diff and exit code 3; rerun with `-Force` only after explicit approval. Review new conflicts in the landing worktree separately. Missing skills, unsafe paths, or download failures stop setup as not READY. Remove the retained snapshot after landing or aborting setup.
+
+Stage only the reported managed paths, not entire skill directories. Verify staged skill content against the snapshot; stop if repository attributes would change its bytes. The existing `setup.ps1` and `setup.sh` remain offline workflow/prompt installers; initialization is a separate Windows PowerShell step.
 
 Older installations may also have `.github/claude/prompts/pr-review.md` and runner label `claude-review`. Setup removes that legacy prompt path only when its content exactly matches the managed prompt. Modified legacy files are preserved. Relabel and reuse a configured runner; do not `--replace` without confirmation; force-overwrite managed files only after a diff and an explicit yes.
 
@@ -79,7 +99,7 @@ codex exec --ephemeral --sandbox workspace-write -c sandbox_workspace_write.netw
 
 On Windows, setup prefers `cursor-agent` because another product may already own the generic `agent` command. It uses `agent` only after identifying it as Cursor Agent.
 
-The existing `/code-review` command must already be installed for the chosen harness and must not pin its own model. The managed prompt begins with `/code-review --comment`.
+The managed prompt explicitly asks the agent to load `pr-code-review`, which uses the installed `code-review` companion. No preinstalled `/code-review` command is required. It permits local Markdown reports only under `reviews/<PR_Name>/` and explicitly requests posting final findings to the PR. Product-code changes, commits, pushes, merges, approvals, PR metadata changes, and sending Slack messages remain prohibited.
 
 The workflow prerequisite step checks harness `--version` only, never harness login.
 
@@ -91,7 +111,7 @@ READY means:
 2. GitHub CLI is authenticated.
 3. A matching self-hosted runner is online **and** the local listener is accepting work (`Listening for Jobs`), not a stale GitHub `online` row during a `TaskAgentSessionConflictException` loop.
 4. The runner runs as the current interactive Windows user, not `NETWORK SERVICE`, with an unlimited scheduled-task execution time limit.
-5. The workflow and prompt are on the repository default branch.
+5. The workflow, prompt, and both complete initialized skill folders are on the repository default branch in the selected harness's location.
 
 Harness authentication is intentionally not included. The final setup report reminds you to authenticate it.
 
@@ -125,6 +145,7 @@ PowerShell:
 powershell -NoProfile -File tests\test-setup.ps1
 powershell -NoProfile -File tests\test-tools.ps1
 powershell -NoProfile -File tests\test-runner-helpers.ps1
+powershell -NoProfile -File tests\test-initialize-skills.ps1
 ```
 
 Git Bash or POSIX:

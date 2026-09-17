@@ -88,7 +88,11 @@ try {
             )) {
             Assert-Contains $workflowText $needle
         }
-        Assert-Contains $promptText "/code-review --comment"
+        Assert-Contains $promptText "pr-code-review"
+        Assert-Contains $promptText "reviews/<PR_Name>/"
+        Assert-Contains $promptText "post the final findings to the pull request"
+        Assert-NotContains $promptText "/code-review --comment"
+        Assert-NotContains $promptText "Do not edit files"
         Assert-Contains $promptText "{{PR_NUMBER}}"
     }
 
@@ -152,7 +156,13 @@ try {
                 'ExecutionTimeLimit',
                 '.runner',
                 'claude-review',
-                '.github/automatic-prr/pr-review.md'
+                '.github/automatic-prr/pr-review.md',
+                'Skill Initialization',
+                'scripts/initialize-skills.ps1',
+                'pr-code-review',
+                '.claude/skills/',
+                '.agents/skills/',
+                'MANAGED_PATH'
             )) {
             Assert-Contains $doc $needle
         }
@@ -160,6 +170,14 @@ try {
     }
     Assert-Contains $skillMd "prepend the printed ``gh:`` and ``pwsh:`` directories"
     Assert-Contains $design "scripts/ensure-tools.ps1"
+    $installStep = $skillMd.IndexOf('7. Install or verify')
+    $initializeStep = $skillMd.IndexOf('8. **Skill Initialization**')
+    $workflowStep = $skillMd.IndexOf('10. Install files')
+    if ($installStep -lt 0 -or $initializeStep -le $installStep -or $workflowStep -le $initializeStep) {
+        throw 'Skill Initialization must follow harness installation and precede workflow installation.'
+    }
+    Assert-Contains $skillMd '-SourceDirectory $snapshot'
+    Assert-Contains $readme 'powershell -NoProfile -File tests\test-initialize-skills.ps1'
 
     Write-Output "setup tests passed"
 }

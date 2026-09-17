@@ -15,6 +15,7 @@ The approved full design is `../docs/harness-independent-pr-review/goal.md` from
 - Missing selected CLIs are installed from official vendor distributions.
 - Base tools include `git`, `gh`, and PowerShell 7 `pwsh`. After `ensure-tools.ps1`, the current agent session must prepend the printed GitHub CLI and `pwsh` directories onto `$env:Path`.
 - `gh auth login` must be visible when the agent TTY cannot show a device code (`Start-Process powershell` with `gh auth login --hostname github.com --git-protocol https --web`, then poll `gh auth status`).
+- Skill Initialization after harness selection: retain one shallow `master` snapshot of `https://github.com/its-peter-yall/My-Skills` outside the repository (record `SOURCE_SHA`), install unchanged `pr-code-review` and `code-review` from `Code-Review Skills` into `.claude/skills/` for Claude or `.agents/skills/` for OpenCode, Cursor, and Codex, reuse the same snapshot in the isolated landing worktree, stage only source-backed `MANAGED_PATH` files, and remove the snapshot after landing or aborting setup. Preflight both trees; differing existing files require a shown diff and explicit approval (exit 3 otherwise). Preserve unrelated extras; reject link/collision paths. The shared `.agents/skills/` layout also suits Antigravity, which is not a selectable setup harness.
 
 ## Security contract
 
@@ -35,11 +36,12 @@ The approved full design is `../docs/harness-independent-pr-review/goal.md` from
 | `scripts/ensure-tools.ps1` | Ensure `git`, `gh`, and real `pwsh`; install via winget when missing; print sources |
 | `scripts/ensure-harness.ps1` | Install or verify only the selected harness CLI |
 | `scripts/setup.ps1`, `scripts/setup.sh` | Offline deterministic workflow/prompt rendering |
+| `scripts/initialize-skills.ps1` | Download or reuse a `master` snapshot of the official review skills, preflight both trees, install unchanged `pr-code-review` and `code-review` into `.claude/skills/` (Claude) or `.agents/skills/` (others), report managed paths, exit 3 with diffs on unapproved conflicts |
 | `scripts/register-runner.ps1` | Hash-checked `curl.exe` download, PATH prefix with real `pwsh`, unlimited logon task, finish config when `.runner` is missing, graceful start, reuse/relabel |
 | `scripts/runner-helpers.ps1` | Offline-testable digest, curl args, proxy URL, and `pwsh` path helpers |
 | `templates/workflows/automatic-prr.yml` | Harness dispatcher and GitHub security controls |
-| `templates/prompts/pr-review.md` | Shared `/code-review --comment` request |
-| `tests/` | Offline rendering, tool-selection, helper, and docs coverage |
+| `templates/prompts/pr-review.md` | Shared pr-code-review request posting findings to the PR |
+| `tests/` | Offline rendering, tool-selection, helper, initializer, and docs coverage |
 
 ## Runner download and start
 
@@ -61,4 +63,4 @@ cursor-agent -p --force --trust [--model <model>] <prompt>
 codex exec --ephemeral --sandbox workspace-write -c sandbox_workspace_write.network_access=true [--model <model>] <prompt>
 ```
 
-The `/code-review` command is assumed to exist in each harness and must not pin its own model.
+The prompt loads the initialized `pr-code-review` skill with its installed `code-review` companion; no preinstalled `/code-review` command is required. Skills are installed unchanged; the selected model is passed through the existing harness invocation. The prompt permits only local Markdown review artifacts under `reviews/<PR_Name>/` and explicitly authorizes posting findings to the PR, not product-code changes, commits, pushes, merges, approvals, PR metadata changes, or sending Slack messages. READY includes both complete skill trees on the default branch.
