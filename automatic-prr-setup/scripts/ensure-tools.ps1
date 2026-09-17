@@ -5,6 +5,8 @@ param()
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
+. (Join-Path $PSScriptRoot "runner-helpers.ps1")
+
 function Fail([int] $Code, [string] $Message) {
     [Console]::Error.WriteLine($Message)
     exit $Code
@@ -58,6 +60,26 @@ if (-not (Test-Command "gh")) {
     }
 }
 
+$pwshDirectory = Resolve-RealPwshDirectory
+if (-not $pwshDirectory) {
+    $winget = Get-Command winget -ErrorAction SilentlyContinue
+    if (-not $winget) {
+        Fail 2 "PowerShell 7 (pwsh) is missing and winget is not available. Install from https://aka.ms/powershell then rerun."
+    }
+    Write-Output "Installing PowerShell 7 via winget..."
+    & $winget.Source install --id Microsoft.PowerShell -e --accept-package-agreements --accept-source-agreements
+    $installCode = $LASTEXITCODE
+    $pwshDirectory = Resolve-RealPwshDirectory
+    if (-not $pwshDirectory) {
+        Fail 2 "winget failed to install Microsoft.PowerShell (exit $installCode). Install PowerShell 7 from https://aka.ms/powershell then rerun."
+    }
+}
+Add-UserPath $pwshDirectory
+
+$pwshCommand = Get-Command pwsh -ErrorAction SilentlyContinue
+$pwshSource = if ($pwshCommand) { $pwshCommand.Source } else { Join-Path $pwshDirectory "pwsh.exe" }
+
 Write-Output "git: $((Get-Command git).Source)"
 Write-Output "gh: $((Get-Command gh).Source)"
+Write-Output "pwsh: $pwshSource"
 Write-Output "Base tools OK."

@@ -39,10 +39,15 @@ try {
     Write-FakeCommand "opencode" "opencode v2.0.0"
     Write-FakeCommand "cursor-agent" "Cursor Agent 1.0"
     Write-FakeCommand "codex" "codex-cli 1.0"
+    [System.IO.File]::WriteAllText((Join-Path $bin "pwsh.exe"), "fake-pwsh-not-empty")
 
     $base = Invoke-WithFakePath -Script $baseScript -Arguments @()
     if ($base.Code -ne 0) { throw "base tool setup failed without real Claude: $($base.Output)" }
     if ($base.Output.IndexOf("claude") -ge 0) { throw "base tool setup still depends on Claude" }
+    if ($base.Output.IndexOf("git:") -lt 0) { throw "base tool setup did not print git source" }
+    if ($base.Output.IndexOf("gh:") -lt 0) { throw "base tool setup did not print gh source" }
+    if ($base.Output.IndexOf("pwsh:") -lt 0) { throw "base tool setup did not print pwsh source" }
+    [Environment]::SetEnvironmentVariable("Path", $originalUserPath, "User")
 
     foreach ($harness in @("claude", "opencode", "cursor", "codex")) {
         $result = Invoke-WithFakePath -Script $harnessScript -Arguments @("-Harness", $harness)
@@ -61,12 +66,21 @@ try {
     $invalid = Invoke-WithFakePath -Script $harnessScript -Arguments @("-Harness", "unknown")
     if ($invalid.Code -ne 2) { throw "Expected invalid harness exit 2, got $($invalid.Code)" }
 
-    $registerText = [System.IO.File]::ReadAllText($registerScript)
+    $helperScript = Join-Path $skillRoot "scripts\runner-helpers.ps1"
+    $registerText = [System.IO.File]::ReadAllText($registerScript) + "`n" + [System.IO.File]::ReadAllText($helperScript)
     foreach ($needle in @(
             '[string] $RunnerLabel = "automatic-prr"',
             '[string] $Harness',
             'actions/runners/$($existing.id)/labels',
-            'HARNESS_COMMAND'
+            'HARNESS_COMMAND',
+            '[Net.ServicePointManager]::SecurityProtocol',
+            'curl.exe',
+            'gh-proxy.com',
+            'asset.digest',
+            'ExecutionTimeLimit',
+            'Listening for Jobs',
+            'TaskAgentSessionConflictException',
+            'Microsoft\WindowsApps'
         )) {
         if ($registerText.IndexOf($needle) -lt 0) {
             throw "register-runner.ps1 missing harness-neutral behavior: $needle"
@@ -74,6 +88,27 @@ try {
     }
     if ($registerText.IndexOf('$claudeCmd') -ge 0) {
         throw "register-runner.ps1 still hard-codes the Claude executable path"
+    }
+    if ($registerText.IndexOf('Invoke-WebRequest -Uri $asset.browser_download_url') -ge 0) {
+        throw "register-runner.ps1 still downloads the runner zip with Invoke-WebRequest"
+    }
+    if ($registerText.IndexOf('Stop-Process -Force') -ge 0) {
+        throw "register-runner.ps1 must not force-kill Runner.Listener"
+    }
+    if ($registerText.IndexOf('elseif (-not (Test-Path -LiteralPath $configCmd -PathType Leaf) -or $Replace)') -ge 0) {
+        throw "register-runner.ps1 still skips config when config.cmd exists without .runner"
+    }
+
+    $toolsText = [System.IO.File]::ReadAllText($baseScript)
+    foreach ($needle in @(
+            'Microsoft.PowerShell',
+            'Resolve-RealPwshDirectory',
+            'Add-UserPath',
+            'pwsh:'
+        )) {
+        if ($toolsText.IndexOf($needle) -lt 0) {
+            throw "ensure-tools.ps1 missing pwsh PATH behavior: $needle"
+        }
     }
 
     Write-Output "tool tests passed"

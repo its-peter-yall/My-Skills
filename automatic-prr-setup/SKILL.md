@@ -13,13 +13,13 @@ Canonical skill directory: the folder containing this `SKILL.md`. Scripts live i
 
 Say READY only when every item is true:
 
-1. `git`, `gh`, and the selected harness CLI are on PATH for the current Windows user.
+1. `git`, `gh`, `pwsh`, and the selected harness CLI are on PATH for the current Windows user.
 2. `gh auth status` succeeds for that user.
-3. `gh api repos/<owner>/<repo>/actions/runners` lists an **online** runner with both `self-hosted` and the chosen label.
-4. That runner runs as this user through a logon scheduled task and `run.cmd`, not `NETWORK SERVICE`.
+3. `gh api repos/<owner>/<repo>/actions/runners` lists an **online** runner with both `self-hosted` and the chosen label, and the local listener is accepting work (`Listening for Jobs` in `_diag/Runner_*.log`, not a stale online API row while `TaskAgentSessionConflictException` is looping).
+4. That runner runs as this user through a logon scheduled task and `run.cmd`, not `NETWORK SERVICE`. The task has an unlimited execution time limit.
 5. `.github/workflows/automatic-prr.yml` and `.github/automatic-prr/pr-review.md` exist on the repository default branch.
 
-Harness authentication is deliberately not checked and is not part of READY. Always tell the user to authenticate the selected harness before expecting reviews to succeed.
+Harness authentication is deliberately not checked and is not part of READY. Always tell the user to authenticate the selected harness before expecting reviews to succeed. Do not run harness login or status commands.
 
 If any required item fails, say **not READY** and stop.
 
@@ -41,6 +41,10 @@ If any required item fails, say **not READY** and stop.
 
 The only setup authentication gate is `gh auth login`. Harness login belongs to the user after setup.
 
+## Migration from older installs
+
+Existing machines may still use runner label `claude-review` and prompt path `.github/claude/prompts/pr-review.md`. The new default label is `automatic-prr` and the managed prompt path is `.github/automatic-prr/pr-review.md`. Relabel and reuse the already-configured runner. Do not pass `-Replace` / `--replace` without confirmation. Force-overwrite managed files only after showing the diff and receiving an explicit yes.
+
 ## Procedure
 
 1. Confirm a Git working tree. Report the current branch. Stop on detached HEAD. Inspect `git status --short` and preserve unrelated changes.
@@ -53,9 +57,25 @@ The only setup authentication gate is `gh auth login`. Harness login belongs to 
    powershell -NoProfile -File "<skill>/scripts/ensure-tools.ps1"
    ```
 
-   This requires `git` and installs `gh` with winget when missing. On POSIX, require `git` and `gh`; this skill does not register a POSIX runner.
+   This requires `git`. It installs GitHub CLI (`gh`) and PowerShell 7 (`pwsh`) with winget when missing. It prefers a real `pwsh.exe` directory (`C:\Program Files\PowerShell\7` or the WindowsApps package folder), not the 0-byte WindowsApps execution alias. On POSIX, require `git` and `gh`; this skill does not register a POSIX runner.
 
-4. Run `gh auth status`. If unauthenticated, run `gh auth login` using HTTPS. If it still fails, stop as not READY.
+   After `ensure-tools.ps1` returns, prepend the printed `gh:` and `pwsh:` directories onto `$env:Path` in the **current agent session**. winget does not update parent shells; later `gh` / `pwsh` calls fail until you do this.
+
+4. Run `gh auth status`. If unauthenticated, run `gh auth login` using HTTPS. If the agent TTY cannot show the device code, launch a **visible** PowerShell window, then poll status. Do not treat a hidden hung login as success:
+
+   ```powershell
+   Start-Process powershell -ArgumentList @(
+     '-NoProfile',
+     '-Command',
+     'gh auth login --hostname github.com --git-protocol https --web'
+   )
+   do {
+     Start-Sleep -Seconds 5
+     gh auth status 2>$null | Out-Null
+   } while ($LASTEXITCODE -ne 0)
+   ```
+
+   If it still fails, stop as not READY.
 
 5. Ask the user to select exactly one review harness:
 
@@ -72,7 +92,7 @@ The only setup authentication gate is `gh auth login`. Harness login belongs to 
    powershell -NoProfile -File "<skill>/scripts/ensure-harness.ps1" -Harness "<harness>"
    ```
 
-   Official installers are used for missing CLIs. Do not run any harness login or status command.
+   Official installers are used for missing CLIs. Do not run any harness login or status command. Workflow prerequisite checks stay `--version` only.
 
 8. Inspect these application-repository paths:
 
@@ -98,26 +118,28 @@ The only setup authentication gate is `gh auth login`. Harness login belongs to 
 
 12. Register, relabel, or reuse the runner:
 
-   ```powershell
-   powershell -NoProfile -File "<skill>/scripts/register-runner.ps1" -RunnerLabel "<label>" -Harness "<harness>"
-   ```
+    ```powershell
+    powershell -NoProfile -File "<skill>/scripts/register-runner.ps1" -RunnerLabel "<label>" -Harness "<harness>"
+    ```
 
-   Reuse an online matching runner. If the configured online runner lacks the chosen label, add it through GitHub's runner-label API. If configured but offline, start it. Never replace it without confirmation. The API must show it online or setup is not READY.
+    Reuse an online matching runner that is actually listening. If the configured online runner lacks the chosen label, add it through GitHub's runner-label API. If `config.cmd` exists but `.runner` is missing, finish registration; do not skip config. If configured but offline, start it. Never replace it without confirmation. Never `Stop-Process -Force` on `Runner.Listener`. Download the runner zip with `curl.exe` (TLS 1.2, official asset URL first, SHA256 from `asset.digest`); on CDN TLS reset retry `--ipv4` then the hash-checked `gh-proxy.com` fallback. The logon scheduled task must keep `run.cmd` alive (unlimited `ExecutionTimeLimit`). READY requires API online **and** a local listener that is not stuck in a session-conflict retry.
 
 13. Land managed changes on the default branch without merging feature work:
 
-   - `git fetch origin`.
-   - Read the default branch with `gh repo view --json defaultBranchRef --jq .defaultBranchRef.name`.
-   - Create an isolated worktree under `%LOCALAPPDATA%\Temp\opencode\automatic-prr-setup-land` on `chore/automatic-prr-setup` from `origin/<default>`.
-   - Run the installer there with the same label, harness, and model. Use force only if already approved.
-   - Commit only `.github/workflows/automatic-prr.yml`, `.github/automatic-prr/pr-review.md`, and an exact-match deletion of `.github/claude/prompts/pr-review.md` when present.
-   - Push, create a PR targeting default, verify its file list, and merge if permitted.
-   - If merge is denied, leave the PR open and report not READY.
-   - Remove the temporary worktree without switching the user's original checkout.
+    - `git fetch origin`.
+    - Read the default branch with `gh repo view --json defaultBranchRef --jq .defaultBranchRef.name`.
+    - Create an isolated worktree under `%LOCALAPPDATA%\Temp\opencode\automatic-prr-setup-land` on `chore/automatic-prr-setup` from `origin/<default>`.
+    - Run the installer there with the same label, harness, and model. Use force only if already approved.
+    - Commit only `.github/workflows/automatic-prr.yml`, `.github/automatic-prr/pr-review.md`, and an exact-match deletion of `.github/claude/prompts/pr-review.md` when present.
+    - Push, create a PR targeting default, verify its file list, and merge if permitted.
+    - If merge is denied, leave the PR open and report not READY.
+    - Remove the temporary worktree without switching the user's original checkout.
 
 14. Report READY with landing branch, PR URL, runner name, API status `online`, label, harness, and selected model or `default`. Remind the user that this Windows account must remain logged in and that they must authenticate the harness separately.
 
 Recommend a local smoke test only when the user wants to spend a harness invocation. Use the same rendered prompt and selected model behavior as the workflow; never silently run it.
+
+After READY, recommend a tiny same-repo non-draft PR only if the user wants to prove job pickup. Do not merge feature branches for that proof.
 
 ## Harness invocation contract
 
@@ -132,7 +154,7 @@ codex exec --ephemeral --sandbox workspace-write -c sandbox_workspace_write.netw
 
 Cursor may use `agent` only after verifying it is Cursor Agent. Never invoke an unrelated executable named `agent`.
 
-The workflow checks the exact PR SHA, rejects drafts and forks, pins `actions/checkout` to `3d3c42e5aac5ba805825da76410c181273ba90b1`, uses `pwsh`, avoids persisted checkout credentials, and cancels superseded reviews.
+The workflow checks the exact PR SHA, rejects drafts and forks, pins `actions/checkout` to `3d3c42e5aac5ba805825da76410c181273ba90b1`, uses `pwsh`, avoids persisted checkout credentials, and cancels superseded reviews. The prerequisite step checks harness `--version` only, never harness login.
 
 ## Errors
 
@@ -142,15 +164,20 @@ The workflow checks the exact PR SHA, rejects drafts and forks, pins `actions/ch
 | Invalid runner label, harness, or model | Stop |
 | `git` missing | Stop |
 | `gh` missing | Install via winget; stop with <https://cli.github.com/> if installation fails |
+| `pwsh` missing | Install Microsoft.PowerShell via winget; prefer a real `pwsh.exe` directory |
 | Selected harness missing | Install from the official source; stop if post-install verification fails |
 | GitHub auth fails after login | Stop, not READY |
+| Hidden `gh auth login` hung with no device code | Launch a visible PowerShell window; do not treat it as success |
 | Harness unauthenticated | Do not check; remind the user in the final report |
 | Cursor `agent` is another product | Ignore it; use or install `cursor-agent` |
 | Registration token 403 | Stop: repository admin access is required |
+| Official runner CDN TLS reset | `curl.exe` + hash-checked fallback; delete zip and fail on digest mismatch |
 | Managed files differ | Diff and wait; force only after approval |
 | Modified legacy Claude prompt | Preserve and report it |
 | Isolated PR merge denied | Leave PR open; not READY |
-| Matching runner online | Reuse it |
+| Matching runner online and listening | Reuse it |
 | Configured runner lacks label | Add label and reuse it |
+| `config.cmd` exists without `.runner` | Finish registration; do not skip config |
 | Configured runner offline | Start it; if still offline, not READY |
+| API online but session-conflict loop | Keep waiting; not READY from a stale online row |
 | Unrelated dirty files | Preserve them; land through the isolated worktree |

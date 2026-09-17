@@ -109,4 +109,20 @@ else
   test "$code" -eq 2
 fi
 
+for doc in "$skill_root/SKILL.md" "$skill_root/README.md" "$skill_root/DESIGN.md"; do
+  grep -Fq '$env:Path' "$doc"
+  grep -Fq 'Start-Process powershell' "$doc"
+  grep -Fq 'gh auth login --hostname github.com --git-protocol https --web' "$doc"
+  grep -Fq 'Listening for Jobs' "$doc"
+  grep -Fq 'gh-proxy.com' "$doc"
+  grep -Fq 'ExecutionTimeLimit' "$doc"
+  grep -Fq '.runner' "$doc"
+  grep -Fq 'claude-review' "$doc"
+  grep -Fq '.github/automatic-prr/pr-review.md' "$doc"
+  if grep -Fq 'you must install pwsh yourself' "$doc"; then
+    printf '%s\n' "Docs still tell the user to install pwsh after READY: $doc" >&2
+    exit 1
+  fi
+done
+
 printf '%s\n' 'setup tests passed'

@@ -139,6 +139,28 @@ try {
     $code = Invoke-Setup -Repo $invalidRepo -Harness "claude" -Model "bad`nmodel"
     if ($code -ne 2) { throw "Expected multiline model exit 2, got $code" }
 
+    $skillMd = [System.IO.File]::ReadAllText((Join-Path $skillRoot "SKILL.md"))
+    $readme = [System.IO.File]::ReadAllText((Join-Path $skillRoot "README.md"))
+    $design = [System.IO.File]::ReadAllText((Join-Path $skillRoot "DESIGN.md"))
+    foreach ($doc in @($skillMd, $readme, $design)) {
+        foreach ($needle in @(
+                '$env:Path',
+                'Start-Process powershell',
+                'gh auth login --hostname github.com --git-protocol https --web',
+                'Listening for Jobs',
+                'gh-proxy.com',
+                'ExecutionTimeLimit',
+                '.runner',
+                'claude-review',
+                '.github/automatic-prr/pr-review.md'
+            )) {
+            Assert-Contains $doc $needle
+        }
+        Assert-NotContains $doc "you must install pwsh yourself"
+    }
+    Assert-Contains $skillMd "prepend the printed ``gh:`` and ``pwsh:`` directories"
+    Assert-Contains $design "scripts/ensure-tools.ps1"
+
     Write-Output "setup tests passed"
 }
 finally {
