@@ -1,6 +1,6 @@
 # automatic-prr-setup design contract
 
-The approved full design is `../docs/harness-independent-pr-review/goal.md` from the repository root.
+The approved full design is `../docs/harness-independent-pr-review/goal.md` from the repository root. Report path, source-branch landing, and workflow-owned commenting are `../docs/pr-review-report-landing/goal.md`.
 
 ## Runtime contract
 
@@ -23,7 +23,7 @@ The approved full design is `../docs/harness-independent-pr-review/goal.md` from
 - Exact head-SHA checkout and verification.
 - Immutable checkout action pin `3d3c42e5aac5ba805825da76410c181273ba90b1`.
 - `persist-credentials: false`.
-- Permissions limited to `contents: read`, `issues: write`, and `pull-requests: write`.
+- Permissions limited to `contents: write` and `pull-requests: write`. `GITHUB_TOKEN` is given only to the land+comment step, never to the harness.
 - Registration tokens and harness credentials never enter git.
 - Runner replacement requires explicit confirmation.
 - Runner zip SHA256 must match GitHub `asset.digest`. Unverified proxy downloads are not kept.
@@ -40,7 +40,7 @@ The approved full design is `../docs/harness-independent-pr-review/goal.md` from
 | `scripts/register-runner.ps1` | Hash-checked `curl.exe` download, PATH prefix with real `pwsh`, unlimited logon task, finish config when `.runner` is missing, graceful start, reuse/relabel |
 | `scripts/runner-helpers.ps1` | Offline-testable digest, curl args, proxy URL, and `pwsh` path helpers |
 | `templates/workflows/automatic-prr.yml` | Harness dispatcher and GitHub security controls |
-| `templates/prompts/pr-review.md` | Shared pr-code-review request posting findings to the PR |
+| `templates/prompts/pr-review.md` | Shared pr-code-review request; harness writes `reviews/<PR_NUMBER>/` only |
 | `tests/` | Offline rendering, tool-selection, helper, initializer, and docs coverage |
 
 ## Runner download and start
@@ -63,4 +63,4 @@ cursor-agent -p --force --trust [--model <model>] <prompt>
 codex exec --ephemeral --sandbox workspace-write -c sandbox_workspace_write.network_access=true [--model <model>] <prompt>
 ```
 
-The prompt loads the initialized `pr-code-review` skill with its installed `code-review` companion; no preinstalled `/code-review` command is required. Skills are installed unchanged; the selected model is passed through the existing harness invocation. The prompt permits only local Markdown review artifacts under `reviews/<PR_Name>/` and explicitly authorizes posting findings to the PR, not product-code changes, commits, pushes, merges, approvals, PR metadata changes, or sending Slack messages. READY includes both complete skill trees on the default branch.
+The prompt loads the initialized `pr-code-review` skill with its installed `code-review` companion; no preinstalled `/code-review` command is required. Skills are installed unchanged; the selected model is passed through the existing harness invocation. The harness writes Markdown only under `reviews/<PR_NUMBER>/` (required file `slack-report.md`) and must not commit, push, comment, or edit product code. After the harness exits, the workflow commits that folder onto the PR source branch and posts `slack-report.md` as a PR comment. READY includes both complete skill trees on the default branch.

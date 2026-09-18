@@ -47,6 +47,6 @@ Severity reflects impact and likelihood, not fix size. When evidence is insuffic
 
 Read [references/phase-report.md](references/phase-report.md) and write exactly one report to the path assigned by the orchestrator, normally:
 
-`./reviews/<PR_Name>/<Phase_Name>-Review.md`
+`./reviews/<PR_Name>/<phase-name>-review.md`
 
 Use stable finding IDs of the form `<PHASE_SLUG>-001`. Include `No confirmed findings` when appropriate. Always document what was inspected, what validation ran, and any coverage limitation. Return a short completion message with the report path and finding counts; leave aggregation and the final verdict to the orchestrator.

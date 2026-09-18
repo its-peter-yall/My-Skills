@@ -174,7 +174,7 @@ codex exec --ephemeral --sandbox workspace-write -c sandbox_workspace_write.netw
 
 Cursor may use `agent` only after verifying it is Cursor Agent. Never invoke an unrelated executable named `agent`.
 
-The workflow checks the exact PR SHA, rejects drafts and forks, pins `actions/checkout` to `3d3c42e5aac5ba805825da76410c181273ba90b1`, uses `pwsh`, avoids persisted checkout credentials, and cancels superseded reviews. The prerequisite step checks harness `--version` only, never harness login.
+The workflow checks the exact PR SHA, rejects drafts and forks, pins `actions/checkout` to `3d3c42e5aac5ba805825da76410c181273ba90b1`, uses `pwsh`, avoids persisted checkout credentials, and cancels superseded reviews. The prerequisite step checks harness `--version` only, never harness login. The harness does not receive `GH_TOKEN` and must not commit, push, or comment. After a successful review the workflow commits only `reviews/<PR_NUMBER>/` onto the PR source branch and posts `slack-report.md` as a pull-request comment.
 
 ## Errors
 

@@ -35,10 +35,10 @@ Each reviewer prompt should contain:
 Load and follow $code-review.
 Review range: <base>...<head>
 PR intent: <concise intent>
-Phase: <Phase_Name>
+Phase: <phase-name>
 Owned scope: <files/hunks/behavior>
 Context dependencies: <adjacent paths or phases>
-Write exactly: ./reviews/<PR_Name>/<Phase_Name>-Review.md
+Write exactly: ./reviews/<PR_Name>/<phase-name>-review.md
 Do not modify product code or write aggregate reports.
 ```
 

@@ -99,7 +99,7 @@ codex exec --ephemeral --sandbox workspace-write -c sandbox_workspace_write.netw
 
 On Windows, setup prefers `cursor-agent` because another product may already own the generic `agent` command. It uses `agent` only after identifying it as Cursor Agent.
 
-The managed prompt explicitly asks the agent to load `pr-code-review`, which uses the installed `code-review` companion. No preinstalled `/code-review` command is required. It permits local Markdown reports only under `reviews/<PR_Name>/` and explicitly requests posting final findings to the PR. Product-code changes, commits, pushes, merges, approvals, PR metadata changes, and sending Slack messages remain prohibited.
+The managed prompt explicitly asks the agent to load `pr-code-review`, which uses the installed `code-review` companion. No preinstalled `/code-review` command is required. The harness writes Markdown only under `reviews/<PR_NUMBER>/`, including `slack-report.md`. It must not commit, push, comment, edit product code, or send Slack messages. The workflow then commits that folder onto the PR source branch and posts `slack-report.md` as a pull-request comment.
 
 The workflow prerequisite step checks harness `--version` only, never harness login.
 
@@ -133,7 +133,7 @@ After READY, a tiny same-repo non-draft PR is optional only if you want to prove
 
 ## Security
 
-The workflow rejects draft and fork pull requests before assigning work to the persistent runner. It checks out and verifies the exact PR SHA, pins checkout to an immutable commit, disables persisted checkout credentials, and gives GitHub only read-content and write-review permissions.
+The workflow rejects draft and fork pull requests before assigning work to the persistent runner. It checks out and verifies the exact PR SHA, pins checkout to an immutable commit, disables persisted checkout credentials, and gives GitHub `contents: write` plus `pull-requests: write`. The harness step does not receive `GITHUB_TOKEN`. Only the land+comment step uses the token, and it stages solely `reviews/<PR_NUMBER>/`.
 
 Registration tokens and harness credentials are never stored in the repository. Do not enable fork reviews on this runner. Never keep an unverified runner zip.
 

@@ -1,6 +1,6 @@
 # Aggregate artifact contracts
 
-## `Review-Report.md`
+## `review-report.md`
 
 Write a technical, evidence-backed report with this structure:
 
@@ -52,9 +52,9 @@ Write a technical, evidence-backed report with this structure:
 
 Sort confirmed findings by severity (`CRITICAL`, `MODERATE`, `MINIMAL`), then by affected path. If none exist, say `No confirmed findings.` Do not hide minimal findings because the verdict is accepted.
 
-## `Slack-Report.md`
+## `slack-report.md`
 
-Make this self-contained, comprehensive, and easy to scan in Slack. Do not assume readers will open `Review-Report.md`.
+Make this self-contained, comprehensive, and easy to scan in Slack. Do not assume readers will open `review-report.md`. The automatic PR review workflow posts this file's body as a pull-request comment.
 
 ```markdown
 *PR Code Review: <PR_Name>*
@@ -87,7 +87,7 @@ Use Slack-compatible bullets and emphasis. Do not use Markdown tables in this fi
 ## Consistency requirements
 
 - The PR identity, base/head revisions, finding counts, severities, and verdict must match across aggregate files.
-- `Slack-Report.md` may shorten explanations but may not change their meaning.
+- `slack-report.md` may shorten explanations but may not change their meaning.
 - Aggregate finding IDs should be `AGG-001`, `AGG-002`, and so on.
 - Every aggregate finding must cite its originating phase finding ID or IDs.
 - Do not include secrets, tokens, internal credentials, or sensitive runtime output in either report.

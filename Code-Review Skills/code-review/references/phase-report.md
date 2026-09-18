@@ -1,6 +1,6 @@
 # Phase review artifact
 
-Write the assigned report in this structure:
+Write the assigned report (normally `./reviews/<PR_Name>/<phase-name>-review.md`) in this structure:
 
 ```markdown
 # Phase Review: <Phase_Name>

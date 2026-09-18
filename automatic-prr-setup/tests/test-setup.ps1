@@ -84,13 +84,22 @@ try {
                 "REVIEW_HARNESS: `"$harness`"",
                 "REVIEW_MODEL: `"$model`"",
                 ".github/automatic-prr/pr-review.md",
+                "contents: write",
+                "pull-requests: write",
+                "Land reports and comment",
+                "chore(review): reports for",
+                "slack-report.md",
                 $expectedHarnessMarkers[$harness]
             )) {
             Assert-Contains $workflowText $needle
         }
+        Assert-NotContains $workflowText "contents: read"
+        Assert-NotContains $workflowText "issues: write"
+        Assert-NotContains $workflowText "gh auth status"
         Assert-Contains $promptText "pr-code-review"
-        Assert-Contains $promptText "reviews/<PR_Name>/"
-        Assert-Contains $promptText "post the final findings to the pull request"
+        Assert-Contains $promptText "reviews/{{PR_NUMBER}}/"
+        Assert-Contains $promptText "slack-report.md"
+        Assert-NotContains $promptText "post the final findings to the pull request"
         Assert-NotContains $promptText "/code-review --comment"
         Assert-NotContains $promptText "Do not edit files"
         Assert-Contains $promptText "{{PR_NUMBER}}"

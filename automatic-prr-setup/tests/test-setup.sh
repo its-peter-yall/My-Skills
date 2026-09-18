@@ -49,9 +49,27 @@ for harness in claude opencode cursor codex; do
   grep -Fq "REVIEW_HARNESS: \"$harness\"" "$workflow"
   grep -Fq "REVIEW_MODEL: \"$model\"" "$workflow"
   grep -Fq '.github/automatic-prr/pr-review.md' "$workflow"
+  grep -Fq 'contents: write' "$workflow"
+  grep -Fq 'pull-requests: write' "$workflow"
+  grep -Fq 'Land reports and comment' "$workflow"
+  grep -Fq 'chore(review): reports for' "$workflow"
+  grep -Fq 'slack-report.md' "$workflow"
+  if grep -Fq 'contents: read' "$workflow"; then
+    printf '%s\n' 'Workflow still requests contents: read.' >&2
+    exit 1
+  fi
+  if grep -Fq 'issues: write' "$workflow"; then
+    printf '%s\n' 'Workflow still requests issues: write.' >&2
+    exit 1
+  fi
+  if grep -Fq 'gh auth status' "$workflow"; then
+    printf '%s\n' 'Workflow still runs gh auth status.' >&2
+    exit 1
+  fi
   grep -Fq 'pr-code-review' "$prompt"
-  grep -Fq 'reviews/<PR_Name>/' "$prompt"
-  grep -Fq 'post the final findings to the pull request' "$prompt"
+  grep -Fq 'reviews/{{PR_NUMBER}}/' "$prompt"
+  grep -Fq 'slack-report.md' "$prompt"
+  ! grep -Fq 'post the final findings to the pull request' "$prompt"
   ! grep -Fq '/code-review --comment' "$prompt"
   ! grep -Fq 'Do not edit files' "$prompt"
 done
