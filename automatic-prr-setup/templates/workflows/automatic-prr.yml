@@ -62,9 +62,9 @@ jobs:
           $PSNativeCommandUseErrorActionPreference = $false
           if ($env:PR_NUMBER -notmatch '^\d+$') { throw "invalid PR_NUMBER" }
           $expected = "chore(review): reports for #$($env:PR_NUMBER)"
-          $subject = (git log -1 --format=%s).Trim()
+          $message = (@(git log -1 --format=%B) -join "`n").Trim()
           $skip = 'false'
-          if ($subject -eq $expected) {
+          if ($message -eq $expected) {
             $files = @(git diff-tree --no-commit-id --name-only -r HEAD | Where-Object { $_ })
             $prefix = "reviews/$($env:PR_NUMBER)/"
             $onlyReports = ($files.Count -gt 0) -and (
@@ -91,13 +91,6 @@ jobs:
             }
             'cursor' {
               $cursorCommand = Get-Command cursor-agent -ErrorAction SilentlyContinue
-              if (-not $cursorCommand) {
-                $candidate = Get-Command agent -ErrorAction SilentlyContinue
-                if ($candidate) {
-                  $helpText = (& $candidate.Source --help 2>&1 | Out-String)
-                  if ($helpText -match 'Cursor Agent') { $cursorCommand = $candidate }
-                }
-              }
               if (-not $cursorCommand) { throw "Cursor Agent CLI is unavailable" }
               & $cursorCommand.Source --version
             }
@@ -114,6 +107,9 @@ jobs:
 
       - name: Run automatic PR review
         if: steps.loop-guard.outputs.skip != 'true'
+        env:
+          GITHUB_TOKEN: ''
+          GH_TOKEN: ''
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -198,12 +194,39 @@ jobs:
           if (-not (Test-Path -LiteralPath $slackReport)) { throw "slack-report.md missing" }
           $slackContent = Get-Content -Raw -LiteralPath $slackReport
           if ([string]::IsNullOrWhiteSpace($slackContent)) { throw "slack-report.md is empty" }
-          if ($slackContent.Length -gt 65536) {
-            throw "slack-report.md exceeds GitHub comment size limit"
-          }
           if (-not (Test-Path -LiteralPath $reviewReport)) { throw "review-report.md missing" }
-          $phaseReports = @(Get-ChildItem -LiteralPath $reportDir -File -Filter "*-review.md")
-          if ($phaseReports.Count -lt 1) { throw "no phase review markdown under $reportDir" }
+
+          $planned = New-Object System.Collections.Generic.List[string]
+          foreach ($line in ((Get-Content -Raw -LiteralPath $reviewReport) -split '\r?\n')) {
+            $trim = $line.Trim()
+            if ($trim -notmatch '^\|') { continue }
+            if ($trim -match '^\|\s*-+') { continue }
+            if ($trim -match '(?i)\|\s*Phase\s*\|') { continue }
+            $cells = @($trim.Trim('|') -split '\|' | ForEach-Object { $_.Trim() })
+            if ($cells.Count -lt 3) { continue }
+            $reportCell = $cells[2]
+            if ($reportCell -match '\(([^)]+)\)') { $reportCell = $Matches[1] }
+            $reportCell = $reportCell.Trim('`')
+            $name = [System.IO.Path]::GetFileName(($reportCell -replace '\\', '/'))
+            if ($name -notlike '*-review.md') { continue }
+            if (-not $planned.Contains($name)) { [void]$planned.Add($name) }
+          }
+          $fullPr = Join-Path $reportDir 'full-pr-review.md'
+          $otherPhases = @(Get-ChildItem -LiteralPath $reportDir -File -Filter '*-review.md' |
+            Where-Object { $_.Name -ne 'full-pr-review.md' })
+          if ($planned.Count -gt 0) {
+            foreach ($name in $planned) {
+              if (-not (Test-Path -LiteralPath (Join-Path $reportDir $name))) {
+                throw "missing planned phase report $name"
+              }
+            }
+          }
+          elseif ((Test-Path -LiteralPath $fullPr) -and $otherPhases.Count -eq 0) {
+            # Small path with no coverage table: full-pr-review.md is sufficient.
+          }
+          else {
+            throw "review-report.md must list every planned phase report"
+          }
 
           function ConvertTo-GitPath([string] $Path) {
             return ($Path -replace '\\', '/').Trim()
@@ -239,8 +262,12 @@ jobs:
           $unexpected = @($staged | Where-Object { -not (Test-ReportPath $_) })
           if ($unexpected.Count -gt 0) { throw "refusing to commit non-report paths" }
 
-          $headMsg = (git log -1 --format=%s).Trim()
-          $alreadyLanded = ($headMsg -eq $commitMessage)
+          $headMessage = (@(git log -1 --format=%B) -join "`n").Trim()
+          $headFiles = @(git diff-tree --no-commit-id --name-only -r HEAD | Where-Object { $_ })
+          $headOnlyReports = ($headFiles.Count -gt 0) -and (
+            -not ($headFiles | Where-Object { $_ -notlike "$prefix*" })
+          )
+          $alreadyLanded = ($headMessage -eq $commitMessage) -and $headOnlyReports
           if ($staged.Count -gt 0) {
             & git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit -m $commitMessage
             if ($LASTEXITCODE -ne 0) { throw "git commit failed" }
@@ -257,6 +284,9 @@ jobs:
             return
           }
 
+          if ($slackContent.Length -gt 65536) {
+            throw "slack-report.md exceeds GitHub comment size limit"
+          }
           gh --version
           if ($LASTEXITCODE -ne 0) { throw "gh is unavailable" }
           & gh pr comment $prNumber --repo $repo --body-file $slackReport

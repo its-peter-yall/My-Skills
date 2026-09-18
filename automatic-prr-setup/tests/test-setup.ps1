@@ -89,6 +89,10 @@ try {
                 "Land reports and comment",
                 "chore(review): reports for",
                 "slack-report.md",
+                "git log -1 --format=%B",
+                "HEAD:refs/heads/",
+                "missing planned phase report",
+                "slack-report.md exceeds GitHub comment size limit",
                 $expectedHarnessMarkers[$harness]
             )) {
             Assert-Contains $workflowText $needle
@@ -96,9 +100,28 @@ try {
         Assert-NotContains $workflowText "contents: read"
         Assert-NotContains $workflowText "issues: write"
         Assert-NotContains $workflowText "gh auth status"
+        Assert-NotContains $workflowText "git push --force"
+        Assert-NotContains $workflowText "git push -f"
+        Assert-NotContains $workflowText "`n      GH_TOKEN:"
+        Assert-Contains $workflowText "GITHUB_TOKEN: `${{ github.token }}"
+        $reviewStep = $workflowText.IndexOf("- name: Run automatic PR review")
+        $landStep = $workflowText.IndexOf("- name: Land reports and comment")
+        if ($reviewStep -lt 0 -or $landStep -le $reviewStep) {
+            throw "Land step must follow the harness review step."
+        }
+        $reviewChunk = $workflowText.Substring($reviewStep, $landStep - $reviewStep)
+        if ($reviewChunk.IndexOf("github.token") -ge 0) {
+            throw "Harness review step must not receive github.token"
+        }
+        Assert-Contains $reviewChunk "GITHUB_TOKEN: ''"
+        Assert-Contains $reviewChunk "GH_TOKEN: ''"
+        $prereqStep = $workflowText.IndexOf("- name: Verify runner prerequisites")
+        $prereqChunk = $workflowText.Substring($prereqStep, $reviewStep - $prereqStep)
+        Assert-NotContains $prereqChunk "--help"
         Assert-Contains $promptText "pr-code-review"
         Assert-Contains $promptText "reviews/{{PR_NUMBER}}/"
         Assert-Contains $promptText "slack-report.md"
+        Assert-Contains $promptText "Do not run gh"
         Assert-NotContains $promptText "post the final findings to the pull request"
         Assert-NotContains $promptText "/code-review --comment"
         Assert-NotContains $promptText "Do not edit files"
@@ -187,6 +210,16 @@ try {
     }
     Assert-Contains $skillMd '-SourceDirectory $snapshot'
     Assert-Contains $readme 'powershell -NoProfile -File tests\test-initialize-skills.ps1'
+
+    $codeReviewRoot = Join-Path (Split-Path -Parent $skillRoot) "Code-Review Skills"
+    $prSkill = [System.IO.File]::ReadAllText((Join-Path $codeReviewRoot "pr-code-review\SKILL.md"))
+    $codeSkill = [System.IO.File]::ReadAllText((Join-Path $codeReviewRoot "code-review\SKILL.md"))
+    Assert-Contains $prSkill "If a PR number is known, use that number only"
+    Assert-Contains $prSkill "<base>-to-<head>"
+    Assert-Contains $prSkill "slack-report.md"
+    Assert-Contains $prSkill "full-pr-review.md"
+    Assert-Contains $prSkill "the agent did not commit, push, or post GitHub comments"
+    Assert-Contains $codeSkill "<phase-name>-review.md"
 
     Write-Output "setup tests passed"
 }

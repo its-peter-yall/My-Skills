@@ -54,6 +54,10 @@ for harness in claude opencode cursor codex; do
   grep -Fq 'Land reports and comment' "$workflow"
   grep -Fq 'chore(review): reports for' "$workflow"
   grep -Fq 'slack-report.md' "$workflow"
+  grep -Fq 'git log -1 --format=%B' "$workflow"
+  grep -Fq 'HEAD:refs/heads/' "$workflow"
+  grep -Fq 'missing planned phase report' "$workflow"
+  grep -Fq 'slack-report.md exceeds GitHub comment size limit' "$workflow"
   if grep -Fq 'contents: read' "$workflow"; then
     printf '%s\n' 'Workflow still requests contents: read.' >&2
     exit 1
@@ -66,9 +70,14 @@ for harness in claude opencode cursor codex; do
     printf '%s\n' 'Workflow still runs gh auth status.' >&2
     exit 1
   fi
+  if grep -Fq 'git push --force' "$workflow" || grep -Fq 'git push -f' "$workflow"; then
+    printf '%s\n' 'Workflow must not force-push.' >&2
+    exit 1
+  fi
   grep -Fq 'pr-code-review' "$prompt"
   grep -Fq 'reviews/{{PR_NUMBER}}/' "$prompt"
   grep -Fq 'slack-report.md' "$prompt"
+  grep -Fq 'Do not run gh' "$prompt"
   ! grep -Fq 'post the final findings to the pull request' "$prompt"
   ! grep -Fq '/code-review --comment' "$prompt"
   ! grep -Fq 'Do not edit files' "$prompt"
