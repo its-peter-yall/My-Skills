@@ -14,7 +14,7 @@ Canonical skill directory: the folder containing this `SKILL.md`. Scripts live i
 Say READY only when every item is true:
 
 1. `git`, `gh`, `pwsh`, and the selected harness CLI are on PATH for the current Windows user.
-2. `gh auth status` succeeds for that user.
+2. `gh auth status` succeeds, and `scripts/assert-repo-auth.ps1` proves the active github.com account can administer the repository named by `origin`. Login to some other account is not enough.
 3. `gh api repos/<owner>/<repo>/actions/runners` lists an **online** runner with both `self-hosted` and the chosen label, and the local listener is accepting work (`Listening for Jobs` in `_diag/Runner_*.log`, not a stale online API row while `TaskAgentSessionConflictException` is looping).
 4. That runner runs as this user through a logon scheduled task and `run.cmd`, not `NETWORK SERVICE`. The task has an unlimited execution time limit.
 5. `.github/workflows/automatic-prr.yml` and `.github/automatic-prr/pr-review.md` exist on the repository default branch.
@@ -41,7 +41,7 @@ If any required item fails, say **not READY** and stop.
 - Commit, push, and merge only the managed workflow, generic prompt, source-backed files in the two initialized skill folders, and an exact-match legacy prompt deletion, using an isolated branch from default.
 - Preserve unrelated skills and extra destination files. Do not stage whole skill directories blindly or rewrite the downloaded skills.
 
-The only setup authentication gate is `gh auth login`. Harness login belongs to the user after setup.
+Setup authentication is `gh auth login` plus `scripts/assert-repo-auth.ps1`. A successful `gh auth status` is not enough. Harness login belongs to the user after setup. The workflow must not check or switch the runner user's GitHub account.
 
 ## Migration from older installs
 
@@ -78,6 +78,28 @@ Existing machines may still use runner label `claude-review` and prompt path `.g
    ```
 
    If it still fails, stop as not READY.
+
+   `gh auth status` only proves that some account is logged in. Runner registration and the landing pull request need admin on the repository this working tree's `origin` names. Do not use `gh repo view` for that identity: it follows the active account and can describe a fork. Run:
+
+   ```powershell
+   powershell -NoProfile -File "<skill>/scripts/assert-repo-auth.ps1"
+   ```
+
+   The script reads `owner/repo` from `git remote get-url origin` and requires `permissions.admin` from `gh api repos/<owner>/<repo>` as the active github.com account. The active login does not have to equal the owner: an organization repository is administered by a member account, not by signing in as the organization. Record `ACTIVE_LOGIN`, `REPO`, and `REPO_OWNER`. If `AUTH_NOTE` is printed, tell the user the active account is an admin but not the owner login, then continue only if they accept that account.
+
+   If the script fails, stop as not READY. Show the active login and `owner/repo`. Have the user `gh auth switch --hostname github.com` or log in as an account with admin on that exact repository. If the agent TTY cannot complete the switch, launch a visible PowerShell window, then poll the script. Do not treat a hidden hung switch as success, and do not continue while the script fails:
+
+   ```powershell
+   Start-Process powershell -ArgumentList @(
+     '-NoProfile',
+     '-Command',
+     'gh auth switch --hostname github.com'
+   )
+   do {
+     Start-Sleep -Seconds 5
+     powershell -NoProfile -File "<skill>/scripts/assert-repo-auth.ps1"
+   } while ($LASTEXITCODE -ne 0)
+   ```
 
 5. Ask the user to select exactly one review harness:
 
@@ -174,7 +196,7 @@ codex exec --ephemeral --sandbox workspace-write -c sandbox_workspace_write.netw
 
 Cursor may use `agent` only after verifying it is Cursor Agent. Never invoke an unrelated executable named `agent`.
 
-The workflow checks the exact PR SHA, rejects drafts and forks, pins `actions/checkout` to `3d3c42e5aac5ba805825da76410c181273ba90b1`, uses `pwsh`, avoids persisted checkout credentials, and cancels superseded reviews. The prerequisite step checks harness `--version` only, never harness login. The harness does not receive `GH_TOKEN` and must not commit, push, or comment. After a successful review the workflow commits only `reviews/<PR_NUMBER>/` onto the PR source branch and posts `slack-report.md` as a pull-request comment.
+The workflow checks the exact PR SHA, rejects drafts and forks, pins `actions/checkout` to `3d3c42e5aac5ba805825da76410c181273ba90b1`, uses `pwsh`, avoids persisted checkout credentials, and cancels superseded reviews. The prerequisite step checks harness `--version` only, never harness login, and must not call `gh` or compare the runner user's GitHub account to the repository owner. Checkout and review-comment posting do not use that login. `actions/checkout` fetches `github.repository` with the workflow token. The land step pushes and runs `gh pr comment` with `GITHUB_TOKEN` only. If that token cannot push or comment, fail. Do not fall back to stored `gh` credentials or an interactive account switch. The harness does not receive `GH_TOKEN` and must not commit, push, or comment. After a successful review the workflow commits only `reviews/<PR_NUMBER>/` onto the PR source branch and posts `slack-report.md` as a pull-request comment.
 
 ## Errors
 
@@ -187,6 +209,7 @@ The workflow checks the exact PR SHA, rejects drafts and forks, pins `actions/ch
 | `pwsh` missing | Install Microsoft.PowerShell via winget; prefer a real `pwsh.exe` directory |
 | Selected harness missing | Install from the official source; stop if post-install verification fails |
 | GitHub auth fails after login | Stop, not READY |
+| Active `gh` account cannot administer origin `owner/repo` | Stop, not READY. Switch or log in as an account with admin on that repository. Do not continue on `gh auth status` alone. |
 | Hidden `gh auth login` hung with no device code | Launch a visible PowerShell window; do not treat it as success |
 | Harness unauthenticated | Do not check; remind the user in the final report |
 | Cursor `agent` is another product | Ignore it; use or install `cursor-agent` |

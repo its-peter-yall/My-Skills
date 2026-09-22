@@ -75,6 +75,8 @@ jobs:
           [System.IO.File]::AppendAllText($env:GITHUB_OUTPUT, "skip=$skip`n")
 
       - name: Verify runner prerequisites
+        # Checkout and comment posting use this repository's workflow token,
+        # not the runner user's GitHub CLI account. Do not add a user-account check here.
         if: steps.loop-guard.outputs.skip != 'true'
         shell: pwsh
         run: |

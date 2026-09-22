@@ -194,7 +194,8 @@ try {
                 'pr-code-review',
                 '.claude/skills/',
                 '.agents/skills/',
-                'MANAGED_PATH'
+                'MANAGED_PATH',
+                'scripts/assert-repo-auth.ps1'
             )) {
             Assert-Contains $doc $needle
         }

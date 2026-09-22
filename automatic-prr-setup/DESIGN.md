@@ -15,6 +15,7 @@ The approved full design is `../docs/harness-independent-pr-review/goal.md` from
 - Missing selected CLIs are installed from official vendor distributions.
 - Base tools include `git`, `gh`, and PowerShell 7 `pwsh`. After `ensure-tools.ps1`, the current agent session must prepend the printed GitHub CLI and `pwsh` directories onto `$env:Path`.
 - `gh auth login` must be visible when the agent TTY cannot show a device code (`Start-Process powershell` with `gh auth login --hostname github.com --git-protocol https --web`, then poll `gh auth status`).
+- After login, `scripts/assert-repo-auth.ps1` must pass. It reads `owner/repo` from `origin` and requires `permissions.admin` for the active github.com account. `gh auth status` and `gh repo view` are not that check: status ignores which account is active, and `gh repo view` follows that account. Organization repositories are administered by a member, not by signing in as the organization. If the check fails, `Start-Process powershell` may show `gh auth switch --hostname github.com`; do not continue until the script exits 0.
 - Skill Initialization after harness selection: retain one shallow `master` snapshot of `https://github.com/its-peter-yall/My-Skills` outside the repository (record `SOURCE_SHA`), install unchanged `pr-code-review` and `code-review` from `Code-Review Skills` into `.claude/skills/` for Claude or `.agents/skills/` for OpenCode, Cursor, and Codex, reuse the same snapshot in the isolated landing worktree, stage only source-backed `MANAGED_PATH` files, and remove the snapshot after landing or aborting setup. Preflight both trees; differing existing files require a shown diff and explicit approval (exit 3 otherwise). Preserve unrelated extras; reject link/collision paths. The shared `.agents/skills/` layout also suits Antigravity, which is not a selectable setup harness.
 
 ## Security contract
@@ -24,6 +25,7 @@ The approved full design is `../docs/harness-independent-pr-review/goal.md` from
 - Immutable checkout action pin `3d3c42e5aac5ba805825da76410c181273ba90b1`.
 - `persist-credentials: false`.
 - Permissions limited to `contents: write` and `pull-requests: write`. `GITHUB_TOKEN` is given only to the land+comment step, never to the harness.
+- Workflow checkout and comment posting use that workflow token for `github.repository`, not the runner user's GitHub CLI account. The prerequisite step must not call `gh`, compare accounts, or switch accounts. Token failure does not fall back to stored `gh` credentials.
 - Registration tokens and harness credentials never enter git.
 - Runner replacement requires explicit confirmation.
 - Runner zip SHA256 must match GitHub `asset.digest`. Unverified proxy downloads are not kept.
@@ -37,7 +39,8 @@ The approved full design is `../docs/harness-independent-pr-review/goal.md` from
 | `scripts/ensure-harness.ps1` | Install or verify only the selected harness CLI |
 | `scripts/setup.ps1`, `scripts/setup.sh` | Offline deterministic workflow/prompt rendering |
 | `scripts/initialize-skills.ps1` | Download or reuse a `master` snapshot of the official review skills, preflight both trees, install unchanged `pr-code-review` and `code-review` into `.claude/skills/` (Claude) or `.agents/skills/` (others), report managed paths, exit 3 with diffs on unapproved conflicts |
-| `scripts/register-runner.ps1` | Hash-checked `curl.exe` download, PATH prefix with real `pwsh`, unlimited logon task, finish config when `.runner` is missing, graceful start, reuse/relabel |
+| `scripts/repo-auth-helpers.ps1`, `scripts/assert-repo-auth.ps1` | Prove the active github.com account can administer the `origin` repository; do not trust `gh repo view` |
+| `scripts/register-runner.ps1` | Hash-checked `curl.exe` download, PATH prefix with real `pwsh`, unlimited logon task, finish config when `.runner` is missing, graceful start, reuse/relabel. Calls `Resolve-ActiveGitHubRepoAccess` before registration |
 | `scripts/runner-helpers.ps1` | Offline-testable digest, curl args, proxy URL, and `pwsh` path helpers |
 | `templates/workflows/automatic-prr.yml` | Harness dispatcher and GitHub security controls |
 | `templates/prompts/pr-review.md` | Shared pr-code-review request; harness writes `reviews/<PR_NUMBER>/` only |

@@ -150,6 +150,7 @@ for doc in "$skill_root/SKILL.md" "$skill_root/README.md" "$skill_root/DESIGN.md
   grep -Fq '.runner' "$doc"
   grep -Fq 'claude-review' "$doc"
   grep -Fq '.github/automatic-prr/pr-review.md' "$doc"
+  grep -Fq 'scripts/assert-repo-auth.ps1' "$doc"
   if grep -Fq 'you must install pwsh yourself' "$doc"; then
     printf '%s\n' "Docs still tell the user to install pwsh after READY: $doc" >&2
     exit 1

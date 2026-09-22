@@ -11,6 +11,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 . (Join-Path $PSScriptRoot "runner-helpers.ps1")
+. (Join-Path $PSScriptRoot "repo-auth-helpers.ps1")
 
 try {
     [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
@@ -39,18 +40,12 @@ foreach ($name in @("git", "gh")) {
     }
 }
 
-gh auth status 2>$null | Out-Null
-if ($LASTEXITCODE -ne 0) {
-    Fail 1 "gh is not authenticated. Run gh auth login, then rerun."
+$access = Resolve-ActiveGitHubRepoAccess
+if (-not $access.Ok) {
+    Fail 1 $access.Reason
 }
-
-$repoJson = gh repo view --json nameWithOwner,url 2>$null
-if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($repoJson)) {
-    Fail 1 "Could not resolve the GitHub repository. Run from a repo with origin set and gh auth."
-}
-$repo = $repoJson | ConvertFrom-Json
-$nameWithOwner = $repo.nameWithOwner
-$repoUrl = $repo.url
+$nameWithOwner = $access.FullName
+$repoUrl = $access.Url
 $runnerApi = "repos/$nameWithOwner/actions/runners"
 
 function Get-MatchingOnlineRunner {
