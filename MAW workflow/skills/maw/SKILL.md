@@ -7,6 +7,11 @@ description: Use when orchestrating features that decompose into multiple sub-pl
 
 You are the **Main Orchestrator Agent**. Your role is strictly managerial: you act as a **concurrent DAG (Directed Acyclic Graph) execution engine**. You decompose the objective into small executable plan units, plot their dependencies, dispatch planners concurrently, pipeline worker execution as soon as plans become ready ("implement while planning"), and oversee a final review. **Never implement code directly in this orchestrator context.**
 
+> [!IMPORTANT]
+> **Core Orchestrator Constraints**:
+> 1. **Foreground Parallel Planners**: When spawning planners, spawn them as **foreground parallel agents**, NOT as background agents (launch all independent ready planners concurrently in the foreground and await their completion).
+> 2. **Never Read the Works (Context Preservation)**: The orchestrator **MUST NOT read the works (`research.md` or `plan*.md`)**. Only verify their existence and completion via **git commits** (`git log -1 --stat <hash>`), strictly preserving your context window for DAG management, pipelining, and state tracking.
+
 ---
 
 ## 1. Objective, Flags & State Initialization
@@ -27,35 +32,169 @@ Extract the target objective and any `--skip` flags from the user prompt or `$AR
 > If the user attempts to skip any other phase (e.g., `--skip planning`, `--skip execution`, `--skip brainstorm`), you MUST reject it immediately and halt before executing:
 > > *"Phase `'[invalid-phase]'` cannot be skipped. Only `'research'` and `'review'` are skippable, as all other phases are required for workflow integrity."*
 
-### 1.2 Initialize State
-Create `docs/[objective-name]/state.md` recording the objective and any active skipped phases:
+### 1.2 Initialize State (`state.md` Schema as it Grows)
+Create `docs/[objective-name]/state.md`. The structure/schema for `state.md` must follow the comprehensive growing schema below (modeled after `docs/agentic-pivot/phase-1/state.md`), maintaining complete lifecycle visibility without forcing the orchestrator to ingest heavy plan or research files.
 
-### `state.md` Template:
+### `state.md` Schema Template:
 ```markdown
 ---
 objective: [objective-name]
 workflow: maw
 status: in-progress
 skipped_phases: [] # e.g. [research], [review], or [research, review]
+source: docs/[objective-name]/idea.md # or prompt/issue reference
+goal_status: approved # pending | approved
+dag_status: initial # initial | research-reconciled | complete
+resume_gate: authorized # none | authorized | resumed
 ---
 
-# State & Dependency Graph: [objective-name]
+# State & Dependency Graph: [objective-name / Title]
 
-## Workflow Milestones
-- [x] Step 1: Brainstorming & Goal Alignment (`docs/[objective-name]/goal.md`)
-- [ ] Step 2: Technical Research (`docs/[objective-name]/research.md`) <!-- or "[x] Step 2: Technical Research (Skipped via --skip research)" -->
-- [ ] Step 3: Planning Completed (All plans written)
-- [ ] Step 4: Execution Completed (All workers finished)
+## Workflow configuration
+
+- Keep all workflow artifacts directly in `docs/[objective-name]/`.
+- Create no unnecessary directories; reuse existing source directories.
+- Skipped phases declared: [None | --skip review | --skip research | --skip research,review].
+- Mandatory phases: Brainstorming, planning, execution, and final verification remain required.
+- Current authorization: Goal approval recorded; dispatching research / ready planners.
+- File preservation rules: [e.g., preserve specific uncommitted files or special configuration files].
+
+## Workflow milestones
+
+- [x] Step 1: Brainstorming & Goal Alignment (`docs/[objective-name]/goal.md`; [commit hash / explicitly approved])
+- [ ] Step 2: Technical Research (`docs/[objective-name]/research.md`; [commit hash]) <!-- or "[x] Step 2: Technical Research (Skipped via --skip research)" -->
+- [ ] Step 3: Planning Completed (all plans written)
+- [ ] Step 4: Execution Completed (all workers finished)
 - [ ] Step 5: Unified Code Review (`docs/[objective-name]/review.md`) <!-- or "[x] Step 5: Unified Code Review (Skipped via --skip review)" -->
 - [ ] Step 6: Final Verification & Report (`docs/[objective-name]/final_report.md`)
 
-## Dependency Matrix & Execution Status
-| Plan ID | Title & Scope | Dependencies | Touched Files / Subsystems | Planner Status | Worker Status | Commits |
+## Brainstorming tasks
+
+- [x] Explore project context: source idea, architecture, structure, conventions, recent commits.
+- [x] Clarify requirements, edge cases, scope boundaries.
+- [x] Compare approaches and recommend one.
+- [x] Present design for approval.
+- [x] Write and commit the validated `goal.md`: [commit hash].
+- [x] Self-check specification for completeness, consistency, ambiguity, and scope.
+- [x] Obtain user approval of written specification.
+- [x] Construct the complete pre-research DAG, file ownership, dependencies, acceptance mapping, and resume procedure below.
+
+## Initial findings
+
+- [Key architectural facts, existing code patterns, endpoints, or limitations discovered during brainstorm]
+
+## Confirmed product decisions
+
+- [Explicit product and architectural decisions confirmed with user during brainstorm / goal approval]
+
+## Dependency matrix & execution status
+
+[Narrative explaining current DAG status, research commit hash, planner/worker rules, and ownership boundaries]
+
+`R` means technical research completed and committed. `P#` worker dependencies mean prerequisite implementation is completed, verified, and committed. Planner dependencies are separately defined so planning and ready workers can overlap.
+
+| Plan ID | Title & Scope | Worker dependencies | Touched files / subsystems | Planner status | Worker status | Commits |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **Plan 1** | [e.g., Data models & schemas] | None | `src/models/`, `db/` | [ ] Pending | [ ] Pending | - |
-| **Plan 2** | [e.g., Backend API routes] | Plan 1 | `src/api/` | [ ] Pending | [ ] Pending | - |
-| **Plan 3** | [e.g., Frontend UI components] | None (disjoint) | `src/components/` | [ ] Pending | [ ] Pending | - |
-| **Plan 4** | [e.g., Client-API integration] | Plan 2, Plan 3 | `src/services/` | [ ] Pending | [ ] Pending | - |
+| **P1** | [Title & Scope] | None (or R) | [Touched files / subsystems] | [ ] Pending | [ ] Pending | - |
+| **P2** | [Title & Scope] | P1 | [Touched files / subsystems] | [ ] Pending | [ ] Pending | - |
+| **P3** | [Title & Scope] | P1 | [Touched files / subsystems] | [ ] Pending | [ ] Pending | - |
+| **P4** | [Title & Scope] | P2, P3 | [Touched files / subsystems] | [ ] Pending | [ ] Pending | - |
+
+*(Note on statuses: Planner status updates to `[x] <hash>` once the planner commits; Worker status updates to `[x] Complete` once the worker finishes and tests pass).*
+
+### Execution graph
+
+```mermaid
+flowchart TD
+    G[Goal approved and DAG complete] --> H[Resume authorized]
+    H --> R[Technical research]
+    R --> P1[P1: Title]
+    P1 --> P2[P2: Title]
+    P1 --> P3[P3: Title]
+    P2 --> P4[P4: Title]
+    P3 --> P4
+    P4 --> V[Final verification and final_report.md]
+```
+
+### Planner readiness and immediate worker dispatch
+
+| Planner | Earliest planning prerequisites after resume | Worker start condition |
+| :--- | :--- | :--- |
+| P1 | R committed (or Goal approved if research skipped) | P1 plan committed |
+| P2 | P1 worker committed | P2 plan committed and P1 complete |
+| P3 | P1 worker committed | P3 plan committed and P1 complete |
+| P4 | P1 worker complete; P2 and P3 plans committed | P4 plan committed; P2 and P3 workers complete |
+
+- Dispatch independent planners concurrently in foreground parallel.
+- Start each ready worker immediately when its plan is committed; do not wait for other planners.
+- Workers with disjoint write ownership execute in parallel.
+- Serialize git staging/commits, even for disjoint workers, to avoid shared-index collisions.
+- A changed upstream contract pauses affected downstream work until plans/types are reconciled.
+
+## Plan scopes, file ownership, and completion gates
+
+### P1 — [Title]
+**Deliverable:** `plan1.md`; [short contract description]
+**Owned files:**
+- `path/to/file1.ts`
+- `path/to/file1.test.ts`
+**Scope:** [Detailed scope description and architectural boundaries]
+**Exit gate:** [Specific automated test assertions proving completion]
+
+### P2 — [Title]
+**Deliverable:** `plan2.md`; [short contract description]
+**Owned files:**
+- `path/to/file2.ts`
+**Scope:** [Detailed scope description and architectural boundaries]
+**Exit gate:** [Specific automated test assertions proving completion]
+
+## Acceptance coverage
+
+| Goal criterion | Primary owner(s) | Integrated verification |
+| :--- | :--- | :--- |
+| AC1: [Criterion description] | P1, P2 | P4, Final verification |
+| AC2: [Criterion description] | P3 | P4, Final verification |
+
+## Research handoff [— complete ([commit hash])]
+[Summary of research decisions and contracts once research is committed, or note if skipped via --skip research]
+
+## Final verification commands and evidence
+
+| Working directory | Command | Expected purpose |
+| :--- | :--- | :--- |
+| `[dir1]` | `[command1]` | [Regression suite / unit tests] |
+| `[dir2]` | `[command2]` | [Build / typecheck / lint] |
+
+## Artifact and commit record
+
+| Artifact | State | Commit |
+| :--- | :--- | :--- |
+| `idea.md` | Original user source | Pre-existing |
+| `goal.md` | Approved | [commit hash] |
+| `state.md` | Initial DAG / in-progress | [commit hash] |
+| `research.md` | Complete (or Skipped) | [commit hash] |
+| `plan1.md` | Written | [commit hash] |
+| `final_report.md` | Pending | - |
+
+## Current gate and resume procedure
+
+**CURRENT GATE: [e.g. READY FOR RESEARCH / DISPATCHING PLANNERS / COMPLETE]**
+
+Resume steps:
+1. [ ] Read this state, approved goal, and current git status; preserve intervening user changes.
+2. [ ] Check current gate and prerequisites.
+3. [ ] Dispatch ready planners in foreground parallel.
+4. [ ] Pipeline unblocked workers immediately upon plan commit.
+5. [ ] Perform final verification and commit final report.
+
+### 1.3 How state.md Grows Across Lifecycle Gates
+The orchestrator updates and grows `state.md` at each workflow transition:
+1. **Brainstorming / Spec Gate**: Initializes the full schema with approved `goal.md` commit, initial findings, confirmed decisions, execution graph, plan scopes with file ownership, exit gates, and acceptance coverage.
+2. **Post-Research**: Once the researcher subagent commits `research.md`, record its commit hash, mark Milestone 2 complete, populate `## Research handoff` with key decisions/contracts, and update `dag_status: research-reconciled`. **Do not read `research.md` into orchestrator context.**
+3. **Planning**: Dispatch ready planners as **foreground parallel agents**. When each planner commits, verify via git commit hash (`git log -1 --stat <hash>`), update `Planner status` with `[x] <hash>`, and update the Artifact record. **Do not read `plan*.md` into orchestrator context.**
+4. **Worker Execution**: When prerequisite plans are committed, dispatch workers immediately. When workers finish, record `Worker status` as `[x] Complete`, record worker commit hashes, and unblock downstream planners/workers.
+5. **Review Gate**: Record review verdict and commit hash, or mark skipped.
+6. **Final Verification**: Run project verification commands, record outcomes in `## Final verification commands and evidence`, commit `final_report.md`, mark all milestones complete, and set `status: complete`.
 ```
 
 ---
@@ -122,15 +261,16 @@ skipped_phases: [] # e.g. [research], [review], or [research, review]
     3. Commit: git add docs/[objective-name]/research.md && git commit -m "docs([objective-name]): technical research"
     Deliverable: Report back with file path docs/[objective-name]/research.md and commit hash.
     ```
-  - Mark `- [x] Step 2: Technical Research` in `state.md`.
+  - **Context Preservation Rule**: The orchestrator **MUST NOT read `research.md`**. Verify that research was completed and committed via its git commit hash (e.g. `git log -1 --stat <hash>`).
+  - In `state.md`, mark `- [x] Step 2: Technical Research (docs/[objective-name]/research.md; [commit hash])`, record key architectural decisions in `## Research handoff`, and update `dag_status: research-reconciled`.
 
 ---
 
 ### Step 3: Decompose & Plot Dependency Graph (DAG) (Crucial — Never Skipped)
 
-The Orchestrator analyzes `goal.md` (and `research.md` if present) and decomposes the implementation into $N$ small, self-contained executable plans (`Plan 1` through `Plan N`).
+The Orchestrator analyzes `goal.md` and the researcher's reported summary (preserving context by not reading the full `research.md` artifact) and decomposes the implementation into $N$ small, self-contained executable plans (`Plan 1` through `Plan N`).
 
-Populate the **Dependency Matrix** in `docs/[objective-name]/state.md`.
+Populate the **Dependency Matrix**, execution graph, plan scopes (with explicit file ownership and exit gates), and acceptance coverage in `docs/[objective-name]/state.md`.
 
 ---
 
@@ -138,9 +278,9 @@ Populate the **Dependency Matrix** in `docs/[objective-name]/state.md`.
 
 Operate an active event loop managing Planners and Workers concurrently:
 
-#### 4A. Spawning Planners (Parallel & Independent)
-- Examine the Dependency Matrix. Any Plan whose planning does not depend on prior implementation details can have its Planner dispatched immediately.
-- If Plan 1 and Plan 3 touch independent subsystems, spawn their Planner Subagents **in parallel**.
+#### 4A. Spawning Planners (Foreground Parallel Agents & Context Preservation)
+- **Constraint 1 (Foreground Parallel Execution)**: When spawning planners, spawn them as **foreground parallel agents**, NOT as background agents. Examine the Dependency Matrix: any plans whose planning prerequisites are met should have their planners dispatched concurrently in the foreground (e.g., in a single `invoke_subagent` call specifying each planner subagent) and await their completion. Do not spawn planners as detached background tasks.
+- **Constraint 2 (Context Preservation - Never Read Plans)**: The orchestrator **MUST NOT read `plan*.md`**. Only verify their existence and completion via **git commit hashes** (`git log -1 --stat <hash>`). Update `Planner status` in `state.md` with `[x] <hash>` (e.g. `[x] 07c8dfe`). Pass the file path `docs/[objective-name]/plan[ID].md` directly to the worker subagent; never ingest plan contents into the orchestrator context window.
 
 #### Planner Subagent Dispatch Prompt:
 ```markdown
@@ -310,3 +450,7 @@ Deliverable: Report back with the fixed items, test verification output, and com
 3. **Never Stall Ready Workers**: As soon as a plan file is written and its prerequisites are met, trigger its Worker immediately.
 4. **Disjoint Workspace Concurrency**: Only run Workers in parallel if their plans touch separate directories/files.
 5. **Path Normalization**: Always use forward slashes (`/`).
+6. **Foreground Parallel Planners**: When spawning planners, spawn them as **foreground parallel agents**, never as background agents.
+7. **Context Preservation (Never Read Works)**: The orchestrator **MUST NOT read `research.md` or `plan*.md`**. Verify deliverables exclusively via git commit hashes (`git log -1 --stat <hash>`) to preserve the orchestrator context window.
+8. **Growing state.md Schema Integrity**: Maintain and grow `state.md` systematically according to the schema (tracking milestones, matrix with commit hashes, execution graph, plan scopes with file ownership and exit gates, acceptance coverage, artifact record, and resume procedure).
+
