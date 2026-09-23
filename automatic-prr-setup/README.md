@@ -91,10 +91,10 @@ Older installations may also have `.github/claude/prompts/pr-review.md` and runn
 The workflow invokes the selected CLI non-interactively:
 
 ```text
-claude -p <prompt> [--model <model>] --permission-mode dontAsk --setting-sources user --no-session-persistence
+claude -p <prompt> --dangerously-skip-permissions --setting-sources user --no-session-persistence [--model <model>]
 opencode run --standalone --auto [--model <provider/model#variant>] <prompt>
-cursor-agent -p --force --trust [--model <model>] <prompt>
-codex exec --ephemeral --sandbox workspace-write -c sandbox_workspace_write.network_access=true [--model <model>] <prompt>
+cursor-agent -p --force --trust --sandbox disabled --approve-mcps [--model <model>] <prompt>
+codex exec --ephemeral --dangerously-bypass-approvals-and-sandbox [--model <model>] <prompt>
 ```
 
 On Windows, setup prefers `cursor-agent` because another product may already own the generic `agent` command. It uses `agent` only after identifying it as Cursor Agent.

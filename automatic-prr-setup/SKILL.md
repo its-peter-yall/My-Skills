@@ -188,10 +188,10 @@ After READY, recommend a tiny same-repo non-draft PR only if the user wants to p
 The workflow passes the rendered prompt as one process argument and omits the model flag when model is blank:
 
 ```text
-claude -p <prompt> [--model <model>] --permission-mode dontAsk --setting-sources user --no-session-persistence
+claude -p <prompt> --dangerously-skip-permissions --setting-sources user --no-session-persistence [--model <model>]
 opencode run --standalone --auto [--model <provider/model#variant>] <prompt>
-cursor-agent -p --force --trust [--model <model>] <prompt>
-codex exec --ephemeral --sandbox workspace-write -c sandbox_workspace_write.network_access=true [--model <model>] <prompt>
+cursor-agent -p --force --trust --sandbox disabled --approve-mcps [--model <model>] <prompt>
+codex exec --ephemeral --dangerously-bypass-approvals-and-sandbox [--model <model>] <prompt>
 ```
 
 Cursor may use `agent` only after verifying it is Cursor Agent. Never invoke an unrelated executable named `agent`.

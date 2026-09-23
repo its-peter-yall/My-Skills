@@ -60,10 +60,10 @@ The approved full design is `../docs/harness-independent-pr-review/goal.md` from
 ## CLI contract
 
 ```text
-claude -p <prompt> [--model <model>] --permission-mode dontAsk --setting-sources user --no-session-persistence
+claude -p <prompt> --dangerously-skip-permissions --setting-sources user --no-session-persistence [--model <model>]
 opencode run --standalone --auto [--model <model>] <prompt>
-cursor-agent -p --force --trust [--model <model>] <prompt>
-codex exec --ephemeral --sandbox workspace-write -c sandbox_workspace_write.network_access=true [--model <model>] <prompt>
+cursor-agent -p --force --trust --sandbox disabled --approve-mcps [--model <model>] <prompt>
+codex exec --ephemeral --dangerously-bypass-approvals-and-sandbox [--model <model>] <prompt>
 ```
 
 The prompt loads the initialized `pr-code-review` skill with its installed `code-review` companion; no preinstalled `/code-review` command is required. Skills are installed unchanged; the selected model is passed through the existing harness invocation. The harness writes Markdown only under `reviews/<PR_NUMBER>/` (required file `slack-report.md`) and must not commit, push, comment, or edit product code. After the harness exits, the workflow commits that folder onto the PR source branch and posts `slack-report.md` as a PR comment. READY includes both complete skill trees on the default branch.

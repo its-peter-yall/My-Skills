@@ -126,7 +126,7 @@ jobs:
             'claude' {
               $arguments = @(
                 '-p', $prompt,
-                '--permission-mode', 'dontAsk',
+                '--dangerously-skip-permissions',
                 '--setting-sources', 'user',
                 '--no-session-persistence'
               )
@@ -149,7 +149,11 @@ jobs:
                 }
               }
               if (-not $cursorCommand) { throw "Cursor Agent CLI is unavailable" }
-              $arguments = @('-p', '--force', '--trust')
+              $arguments = @(
+                '-p', '--force', '--trust',
+                '--sandbox', 'disabled',
+                '--approve-mcps'
+              )
               if ($hasModel) { $arguments += @('--model', $env:REVIEW_MODEL) }
               $arguments += $prompt
               & $cursorCommand.Source @arguments
@@ -157,8 +161,7 @@ jobs:
             'codex' {
               $arguments = @(
                 'exec', '--ephemeral',
-                '--sandbox', 'workspace-write',
-                '-c', 'sandbox_workspace_write.network_access=true'
+                '--dangerously-bypass-approvals-and-sandbox'
               )
               if ($hasModel) { $arguments += @('--model', $env:REVIEW_MODEL) }
               $arguments += $prompt
