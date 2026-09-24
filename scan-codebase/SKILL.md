@@ -38,7 +38,7 @@ For each part, use a short assignment containing only:
 - the repository root, the part's `part_name`, its purpose and outcome or contract, exact owned paths, and the explorer's concise context for that part;
 - a unique report destination ending in `<part_name>-review.md`.
 
-Do not paste the prompt templates' contents into assignments. Give all reviewers in a run the same selected concerns. If the selected reviewer's context capacity makes a mapped part too large, ask the explorer to split that part before dispatch. Use a fresh run directory, by default `<repo>/reviews/scan-codebase/<YYYYMMDD-HHMMSS>/`, so earlier reports are preserved. Keep assignments to at most three active parts at a time. For fewer than three remaining parts, assign only the remainder.
+Do not paste the prompt templates' contents into assignments. Give all reviewers in a run the same selected concerns. If the selected reviewer's context capacity makes a mapped part too large, ask the explorer to split that part before dispatch. Save reports at the repository root under `reviews/<Month D>/<part_name>-review.md`, using the current local date (for example, `reviews/September 24/frontend-review.md`). Use the same date folder for every part in a run. If that folder already exists from an earlier run that day, choose the next unused numbered sibling such as `September 24 (2)`, then `September 24 (3)`, preserving all earlier reports. Keep assignments to at most three active parts at a time. For fewer than three remaining parts, assign only the remainder.
 
 ## 4. Track completion
 
