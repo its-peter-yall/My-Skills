@@ -1,3 +1,8 @@
+---
+name: agents-markdown-setup
+description: Create or update AGENTS.md for this repository with compact, high-signal agent instructions. Use when asked to write AGENTS.md, generate agent docs, or set up repository instructions for coding agents.
+---
+
 Create or update `AGENTS.md` for this repository.
 
 The goal is a compact instruction file that helps future OpenCode sessions avoid mistakes and ramp up quickly. Every line should answer: "Would an agent likely miss this without help?" If not, leave it out.
