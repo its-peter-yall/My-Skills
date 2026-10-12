@@ -1,6 +1,6 @@
 ---
 name: brainstorming
-description: "Use this before any creative work. Explores user intent, requirements and design before implementation."
+description: "Do not use this skill unless explicitly asked. Explores user intent, requirements and design before implementation."
 ---
 
 # Brainstorming Ideas Into Designs
